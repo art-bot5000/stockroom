@@ -195,7 +195,17 @@
   /* ── SELECT STYLE ── */
   select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%237880a0' d='M6 8L1 3h10z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 28px !important; }
 
-  /* ── CARD IMAGE ── */
+  /* ── CUSTOM TAGS ── */
+  .item-tag { display:inline-flex; align-items:center; font-size:11px; font-weight:700; font-family:var(--mono); padding:3px 9px; border-radius:99px; border:1px solid; cursor:pointer; transition:all 0.15s; user-select:none; letter-spacing:0.3px; }
+  .item-tag.active { opacity:1; }
+  .item-tag.inactive { opacity:0.28; border-style:dashed; }
+  .tag-input-row { display:flex; align-items:center; gap:10px; padding:10px 0; border-bottom:1px solid rgba(46,51,80,0.4); }
+  .tag-input-row:last-child { border-bottom:none; }
+  .tag-input-row input { flex:1; background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:7px 10px; color:var(--text); font-family:var(--sans); font-size:13px; outline:none; }
+  .tag-input-row input:focus { border-color:var(--accent); }
+  .tag-swatch { width:14px; height:14px; border-radius:50%; flex-shrink:0; }
+
+
   .card-image { width:100%;height:120px;object-fit:contain;border-radius:8px;background:var(--surface2);margin-bottom:12px;display:block; }
   .card-image-placeholder { width:100%;height:80px;display:flex;align-items:center;justify-content:center;font-size:36px;background:var(--surface2);border-radius:8px;margin-bottom:12px; }
   .img-preview-wrap { margin-top:10px;display:flex;align-items:center;gap:10px; }
@@ -335,6 +345,9 @@
         <button class="filter-chip" onclick="setRatingFilter(5,this)">★★★★★ 5</button>
         <button class="filter-chip" onclick="setRatingFilter(-1,this)">⚠️ Not rated</button>
       </div>
+      <div id="tag-filter-bar" style="display:none;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">
+        <span style="font-size:11px;color:var(--muted);font-family:var(--mono);letter-spacing:0.5px;text-transform:uppercase">Tags:</span>
+      </div>
     </div>
     <div id="items-grid"></div>
   </div>
@@ -402,6 +415,12 @@
         <div class="setting-info"><h4>Country / Region</h4><p>Sets which stores appear in the price checker</p></div>
         <select id="setting-country" onchange="saveSettings()" style="width:190px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 28px 6px 8px;font-family:var(--sans);font-size:13px"></select>
       </div>
+    </div>
+    <div class="settings-card">
+      <h3>🏷️ Custom Tags</h3>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:14px">Define up to 5 tags to organise your items. Toggle them on each card in the stock view.</p>
+      <div id="tag-settings-rows"></div>
+      <button class="btn btn-ghost btn-sm" style="margin-top:12px" onclick="saveTagSettings()">Save Tags</button>
     </div>
     <div class="settings-card">
       <h3>📦 Data</h3>
@@ -501,7 +520,7 @@
         <label>Product URL</label>
         <div style="display:flex;gap:8px;align-items:center">
           <input type="url" id="f-url" placeholder="https://amazon.co.uk/..." oninput="autoFillStore()" style="flex:1">
-          <button type="button" class="btn btn-ghost btn-sm" onclick="fetchProductImage()" id="fetch-img-btn" title="Fetch product image from URL">🖼 Fetch Image</button>
+          <button type="button" class="btn btn-ghost btn-sm" onclick="fetchProductImage()" id="fetch-img-btn" title="Search for product image by name">🖼 Find Image</button>
         </div>
         <div class="img-preview-wrap" id="img-preview-wrap" style="display:none">
           <img id="img-preview" class="img-preview" src="" alt="Product image">
@@ -791,6 +810,7 @@ function saveData() {
 function saveSettings() {
   settings.threshold = parseInt(document.getElementById('setting-threshold').value);
   settings.country = document.getElementById('setting-country').value;
+  // customTags preserved — only updated via saveTagSettings()
   try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e){}
   renderAll();
 }
@@ -937,6 +957,7 @@ function starsHTML(rating) {
 function renderAll() {
   document.getElementById('item-count').textContent = items.length + ' item' + (items.length!==1?'s':'');
   buildStoreFilterBar();
+  buildTagFilterBar();
   renderGrid();
   // sync settings UI
   document.getElementById('setting-threshold').value = settings.threshold;
@@ -968,6 +989,11 @@ function renderGrid() {
     if (activeRating === -1 && item.rating) return false;        // unrated only
     if (activeRating === -1 && !item.rating) return true;
     if (activeRating > 0 && item.rating !== activeRating) return false;
+
+    // Tag filter
+    if (activeTagFilter !== null) {
+      if (!(item.tags || []).includes(activeTagFilter)) return false;
+    }
 
     return true;
   });
@@ -1053,6 +1079,7 @@ function cardHTML(item, threshold) {
         ${item.rating ? RATING_LABELS[item.rating] : 'Not rated'}
       </span>
     </div>
+    ${cardTagsHTML(item)}
     ${item.url ? `<a class="card-link" href="${esc(item.url)}" target="_blank" rel="noopener">🛒 Buy now ↗</a>` : ''}
     <button class="btn btn-ghost btn-sm log-btn" onclick="openLogModal('${item.id}')">+ Log Purchase</button>
   </div>`;
@@ -1072,6 +1099,108 @@ const CATEGORY_EMOJI = {
   'Food & Drink':'☕', 'Health':'💊', 'Garden':'🌱',
   'Office':'📎', 'Other':'📦'
 };
+
+// ═══════════════════════════════════════════
+//  CUSTOM TAGS
+// ═══════════════════════════════════════════
+const TAG_COLORS = [
+  { bg:'rgba(91,141,238,0.15)',  border:'rgba(91,141,238,0.5)',  text:'#5b8dee' },  // blue
+  { bg:'rgba(76,187,138,0.15)', border:'rgba(76,187,138,0.5)',  text:'#4cbb8a' },  // green
+  { bg:'rgba(232,168,56,0.15)', border:'rgba(232,168,56,0.5)',  text:'#e8a838' },  // amber
+  { bg:'rgba(193,100,232,0.15)',border:'rgba(193,100,232,0.5)', text:'#c164e8' },  // purple
+  { bg:'rgba(232,80,80,0.15)',  border:'rgba(232,80,80,0.5)',   text:'#e85050' },  // red
+];
+
+let activeTagFilter = null; // null = all, 0-4 = tag index
+
+function getCustomTags() {
+  return settings.customTags || ['','','','',''];
+}
+
+function cardTagsHTML(item) {
+  const tags = getCustomTags();
+  const itemTags = item.tags || [];
+  const defined = tags.filter(t => t && t.trim());
+  if (!defined.length) return '';
+
+  const chips = tags.map((tag, i) => {
+    if (!tag || !tag.trim()) return '';
+    const c = TAG_COLORS[i];
+    const active = itemTags.includes(i);
+    return `<span class="item-tag ${active ? 'active' : 'inactive'}"
+      style="background:${active ? c.bg : 'transparent'};border-color:${c.border};color:${c.text}"
+      onclick="toggleItemTag('${item.id}',${i})"
+      title="${active ? 'Remove tag' : 'Add tag'}">${esc(tag)}</span>`;
+  }).join('');
+
+  return `<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px">${chips}</div>`;
+}
+
+function toggleItemTag(itemId, tagIndex) {
+  const item = items.find(i => i.id === itemId);
+  if (!item) return;
+  if (!item.tags) item.tags = [];
+  const idx = item.tags.indexOf(tagIndex);
+  if (idx === -1) item.tags.push(tagIndex);
+  else item.tags.splice(idx, 1);
+  saveData();
+  // Re-render just this card's tags without full grid re-render
+  renderAll();
+  if (driveConnected) setTimeout(syncNow, 400);
+}
+
+function buildTagSettingsRows() {
+  const tags = getCustomTags();
+  const rows = document.getElementById('tag-settings-rows');
+  if (!rows) return;
+  rows.innerHTML = tags.map((tag, i) => {
+    const c = TAG_COLORS[i];
+    return `<div class="tag-input-row">
+      <div class="tag-swatch" style="background:${c.text}"></div>
+      <input type="text" id="tag-input-${i}" value="${esc(tag)}" maxlength="20" placeholder="Tag ${i+1} name (leave blank to hide)">
+    </div>`;
+  }).join('');
+}
+
+function saveTagSettings() {
+  const tags = [0,1,2,3,4].map(i => {
+    const el = document.getElementById('tag-input-'+i);
+    return el ? el.value.trim() : '';
+  });
+  settings.customTags = tags;
+  try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e) {}
+  buildTagFilterBar();
+  renderAll();
+  toast('Tags saved ✓');
+  if (driveConnected) setTimeout(syncNow, 400);
+}
+
+function buildTagFilterBar() {
+  const tags = getCustomTags();
+  const bar = document.getElementById('tag-filter-bar');
+  if (!bar) return;
+  const defined = tags.map((t,i) => ({t,i})).filter(({t}) => t && t.trim());
+  if (!defined.length) { bar.style.display = 'none'; return; }
+
+  bar.style.display = 'flex';
+  const label = `<span style="font-size:11px;color:var(--muted);font-family:var(--mono);letter-spacing:0.5px;text-transform:uppercase">Tags:</span>`;
+  const allChip = `<button class="filter-chip${activeTagFilter===null?' active':''}" onclick="setTagFilter(null,this)">All</button>`;
+  const chips = defined.map(({t,i}) => {
+    const c = TAG_COLORS[i];
+    return `<button class="filter-chip${activeTagFilter===i?' active':''}"
+      style="${activeTagFilter===i?`background:${c.bg};border-color:${c.border};color:${c.text}`:''};"
+      onclick="setTagFilter(${i},this)">${esc(t)}</button>`;
+  }).join('');
+  bar.innerHTML = label + allChip + chips;
+}
+
+function setTagFilter(index, btn) {
+  activeTagFilter = index;
+  buildTagFilterBar(); // rebuilds with correct active state
+  renderGrid();
+}
+
+
 
 async function fetchProductImage() {
   const url = document.getElementById('f-url').value.trim();
@@ -1110,42 +1239,85 @@ async function fetchProductImage() {
   }
 }
 
-async function extractOgImage(url) {
-  // Try two CORS proxies in sequence
-  const proxies = [
-    `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
-    `https://corsproxy.io/?${encodeURIComponent(url)}`
-  ];
+async function fetchProductImage() {
+  const name = document.getElementById('f-name').value.trim();
+  const url  = document.getElementById('f-url').value.trim();
+  if (!name && !url) { alert('Enter a product name first.'); return; }
 
-  for (const proxyUrl of proxies) {
-    try {
-      const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
-      if (!res.ok) continue;
+  const btn    = document.getElementById('fetch-img-btn');
+  const wrap   = document.getElementById('img-preview-wrap');
+  const status = document.getElementById('img-preview-status');
+  const preview = document.getElementById('img-preview');
 
-      let html;
-      if (proxyUrl.includes('allorigins')) {
-        const data = await res.json();
-        html = data.contents;
-      } else {
-        html = await res.text();
-      }
+  btn.textContent = '⏳ Searching…';
+  btn.disabled = true;
+  status.textContent = '';
+  wrap.style.display = 'none';
 
-      if (!html) continue;
+  const imageUrl = await findProductImage(name || url);
 
-      // Try og:image first, then twitter:image, then first product image
-      const ogMatch = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
-        || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i)
-        || html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i)
-        || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']twitter:image["']/i);
+  btn.textContent = '🖼 Find Image';
+  btn.disabled = false;
 
-      if (ogMatch && ogMatch[1]) {
-        const imgUrl = ogMatch[1].replace(/&amp;/g, '&');
-        if (imgUrl.startsWith('http')) return imgUrl;
-      }
-    } catch(e) {
-      continue;
-    }
+  if (imageUrl) {
+    pendingImageUrl = imageUrl;
+    preview.src = imageUrl;
+    preview.onerror = () => {
+      status.textContent = '⚠️ Image may not display cross-origin';
+      status.style.color = 'var(--warn)';
+    };
+    status.textContent = '✓ Image found';
+    status.style.color = 'var(--ok)';
+    wrap.style.display = 'flex';
+  } else {
+    pendingImageUrl = null;
+    wrap.style.display = 'none';
+    toast('No image found — try a more specific product name');
   }
+}
+
+async function findProductImage(query) {
+  // 1. Open Food Facts — best for food, drink, household consumables
+  try {
+    const offUrl = `https://world.openfoodfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(query)}&search_simple=1&action=process&json=1&page_size=5&fields=image_url,image_front_url,product_name`;
+    const res = await fetch(offUrl, { signal: AbortSignal.timeout(6000) });
+    if (res.ok) {
+      const data = await res.json();
+      const products = data.products || [];
+      for (const p of products) {
+        const img = p.image_front_url || p.image_url;
+        if (img && img.startsWith('http')) return img;
+      }
+    }
+  } catch(e) {}
+
+  // 2. Open Beauty Facts — covers toiletries, cleaning products, cosmetics
+  try {
+    const obfUrl = `https://world.openbeautyfacts.org/cgi/search.pl?search_terms=${encodeURIComponent(query)}&search_simple=1&action=process&json=1&page_size=5&fields=image_url,image_front_url`;
+    const res = await fetch(obfUrl, { signal: AbortSignal.timeout(6000) });
+    if (res.ok) {
+      const data = await res.json();
+      const products = data.products || [];
+      for (const p of products) {
+        const img = p.image_front_url || p.image_url;
+        if (img && img.startsWith('http')) return img;
+      }
+    }
+  } catch(e) {}
+
+  // 3. DuckDuckGo image search as fallback — works for anything not in the above databases
+  try {
+    const ddgUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(`https://duckduckgo.com/?q=${encodeURIComponent(query + ' product')}&iax=images&ia=images&format=json`)}`;
+    const res = await fetch(ddgUrl, { signal: AbortSignal.timeout(8000) });
+    if (res.ok) {
+      const wrapper = await res.json();
+      const html = wrapper.contents || '';
+      // DDG embeds image data in a JSON block in the page
+      const match = html.match(/"height":\d+,"image":"(https?:[^"]+)","source"/);
+      if (match && match[1]) return match[1].replace(/\\\//g, '/');
+    }
+  } catch(e) {}
+
   return null;
 }
 
@@ -2233,6 +2405,8 @@ function init() {
 
   buildCountryGrid();
   buildSettingsCountrySelect();
+  buildTagSettingsRows();
+  buildTagFilterBar();
   wizardCountry = settings.country || 'GB';
   selectCountry(wizardCountry);
 
