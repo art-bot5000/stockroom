@@ -34,7 +34,9 @@
   .btn-ghost:hover { color: var(--text); border-color: var(--muted); }
   .btn-danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
   .btn-danger:hover { background: var(--danger); color: #fff; }
-  .btn-sm { padding: 6px 12px; font-size: 12px; }
+  .btn-blue { background: var(--accent2); color: #fff; }
+  .btn-blue:hover { background: #6f9ff5; }
+
   .btn-icon { background: var(--surface2); border: 1px solid var(--border); border-radius: 6px; color: var(--muted); cursor: pointer; padding: 5px 8px; font-size: 12px; transition: all 0.15s; }
   .btn-icon:hover { color: var(--text); border-color: var(--muted); }
 
@@ -165,7 +167,14 @@
   .btn-xl { font-size: 15px; padding: 13px 28px; border-radius: 10px; justify-content: center; }
   .btn-xl.full { width: 100%; }
 
-  /* ── TOAST ── */
+  /* ── SYNC PILL ── */
+  .sync-pill { font-family: var(--mono); font-size: 11px; padding: 5px 10px; border-radius: 99px; display: flex; align-items: center; gap: 6px; }
+  .sync-pill.synced { background: rgba(76,187,138,0.15); color: var(--ok); }
+  .sync-pill.pending { background: rgba(232,168,56,0.15); color: var(--warn); }
+  .sync-pill.error   { background: rgba(232,80,80,0.15);  color: var(--danger); }
+  .sync-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; flex-shrink:0; }
+
+
   #toast { position: fixed; bottom: 24px; right: 24px; z-index: 999; background: var(--ok); color: #fff; font-weight: 700; padding: 12px 20px; border-radius: 8px; font-size: 13px; transform: translateY(60px); opacity: 0; transition: all 0.3s; pointer-events: none; }
   #toast.show { transform: translateY(0); opacity: 1; }
 
@@ -221,7 +230,13 @@
 <!-- ═══ HEADER ═══ -->
 <div id="app-header">
   <div class="logo">STOCKROOM <span>/ HOUSEHOLD TRACKER</span></div>
-  <button class="btn btn-primary btn-sm" onclick="openAddModal()">+ Add Item</button>
+  <div style="display:flex;align-items:center;gap:10px">
+    <div id="sync-pill" class="sync-pill pending">
+      <div class="sync-dot"></div>
+      <span id="sync-label">Local only</span>
+    </div>
+    <button class="btn btn-primary btn-sm" onclick="openAddModal()">+ Add Item</button>
+  </div>
 </div>
 
 <!-- ═══ MAIN ═══ -->
@@ -264,7 +279,17 @@
   <!-- SETTINGS VIEW -->
   <div class="view" id="view-settings">
     <div class="settings-card">
-      <h3>⚙️ Preferences</h3>
+      <h3>☁️ Google Drive Sync</h3>
+      <div class="setting-row">
+        <div class="setting-info"><h4>Connection</h4><p>Sync your stockroom to Google Drive</p></div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span id="drive-status" style="display:none;align-items:center;gap:6px;font-size:12px;color:var(--ok);font-family:var(--mono)">✓ Connected</span>
+          <button id="drive-connect-btn" class="btn btn-blue btn-sm" onclick="connectDrive()">Connect Drive</button>
+          <button id="drive-sync-btn" class="btn btn-ghost btn-sm" style="display:none" onclick="syncNow()">Sync Now</button>
+        </div>
+      </div>
+    </div>
+
       <div class="setting-row">
         <div class="setting-info"><h4>Low stock warning</h4><p>Warn when stock drops below this %</p></div>
         <select id="setting-threshold" onchange="saveSettings()" style="width:90px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 28px 6px 8px;font-family:var(--sans);font-size:13px">
@@ -484,6 +509,13 @@ const STORES_BY_COUNTRY = {
 function getStores(code) { return STORES_BY_COUNTRY[code] || STORES_BY_COUNTRY.OTHER; }
 
 // ═══════════════════════════════════════════
+//  CONFIG
+// ═══════════════════════════════════════════
+const CLIENT_ID = '589308993147-rfj3kbaave6uhf3k1ojes3ph2l1pkd1m.apps.googleusercontent.com';
+const SCOPES = 'https://www.googleapis.com/auth/drive.file';
+const FILE_NAME = 'stockroom_data.json';
+
+// ═══════════════════════════════════════════
 //  STATE
 // ═══════════════════════════════════════════
 let items = [];
@@ -492,6 +524,11 @@ let editingId = null;
 let loggingId = null;
 let activeFilter = 'all';
 let wizardCountry = 'GB';
+
+// Drive state
+let accessToken = null;
+let driveFileId = null;
+let driveConnected = false;
 
 // ═══════════════════════════════════════════
 //  UTILS
@@ -877,6 +914,7 @@ function saveItem() {
   closeModal('item-modal');
   renderAll();
   toast('Item saved ✓');
+  if (driveConnected) setTimeout(syncNow, 400);
 }
 
 function saveLog() {
@@ -895,6 +933,7 @@ function saveLog() {
   closeModal('log-modal');
   renderAll();
   toast('Purchase logged ✓');
+  if (driveConnected) setTimeout(syncNow, 400);
 }
 
 function deleteItem(id) {
@@ -983,10 +1022,130 @@ function buildSettingsCountrySelect() {
 }
 
 // ═══════════════════════════════════════════
-//  INIT
+//  GOOGLE DRIVE SYNC
 // ═══════════════════════════════════════════
+function connectDrive() {
+  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth`
+    + `?client_id=${CLIENT_ID}`
+    + `&redirect_uri=${encodeURIComponent(location.origin + location.pathname)}`
+    + `&response_type=token`
+    + `&scope=${encodeURIComponent(SCOPES)}`
+    + `&prompt=consent`;
+  window.open(authUrl, 'gdrive_auth', 'width=500,height=620');
+}
+
+function handleOAuthRedirect() {
+  const hash = window.location.hash;
+  if (!hash.includes('access_token')) return;
+  const params = new URLSearchParams(hash.slice(1));
+  const token = params.get('access_token');
+  if (!token) return;
+  history.replaceState(null, '', location.pathname);
+  accessToken = token;
+  driveConnected = true;
+  try { localStorage.setItem('stockroom_drive', JSON.stringify({ driveFileId, driveConnected })); } catch(e){}
+  updateDriveUI();
+  syncNow();
+}
+
+async function syncNow() {
+  if (!driveConnected || !accessToken) return;
+  updateSyncPill('syncing');
+  try {
+    const payload = JSON.stringify({ items, settings, lastSynced: new Date().toISOString() });
+
+    if (!driveFileId) {
+      // Search for existing file first
+      const res = await fetch(
+        `https://www.googleapis.com/drive/v3/files?q=name='${FILE_NAME}'+and+trashed=false&fields=files(id)`,
+        { headers: { Authorization: 'Bearer ' + accessToken } }
+      );
+      const data = await res.json();
+      if (data.files && data.files.length) {
+        driveFileId = data.files[0].id;
+        // Load remote data and merge
+        const fileRes = await fetch(
+          `https://www.googleapis.com/drive/v3/files/${driveFileId}?alt=media`,
+          { headers: { Authorization: 'Bearer ' + accessToken } }
+        );
+        const remote = await fileRes.json();
+        if (remote.items) items = remote.items;
+        if (remote.settings) settings = { ...settings, ...remote.settings };
+        saveData();
+        renderAll();
+      } else {
+        // Create new file
+        const meta = await fetch('https://www.googleapis.com/drive/v3/files', {
+          method: 'POST',
+          headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ name: FILE_NAME, mimeType: 'application/json' })
+        });
+        const metaData = await meta.json();
+        driveFileId = metaData.id;
+      }
+      try { localStorage.setItem('stockroom_drive', JSON.stringify({ driveFileId, driveConnected })); } catch(e){}
+    }
+
+    // Upload current data
+    await fetch(
+      `https://www.googleapis.com/upload/drive/v3/files/${driveFileId}?uploadType=media`,
+      {
+        method: 'PATCH',
+        headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+        body: payload
+      }
+    );
+    updateSyncPill('synced');
+    toast('Synced to Drive ✓');
+  } catch(err) {
+    console.error('Drive sync error:', err);
+    updateSyncPill('error');
+  }
+}
+
+function updateDriveUI() {
+  const pill = document.getElementById('sync-pill');
+  const pillLabel = document.getElementById('sync-label');
+  const driveBtn = document.getElementById('drive-connect-btn');
+  const driveStatus = document.getElementById('drive-status');
+  const syncBtn = document.getElementById('drive-sync-btn');
+
+  if (driveConnected) {
+    pill.className = 'sync-pill synced';
+    pillLabel.textContent = 'Drive synced';
+    if (driveBtn) driveBtn.style.display = 'none';
+    if (driveStatus) driveStatus.style.display = 'flex';
+    if (syncBtn) syncBtn.style.display = 'inline-flex';
+  } else {
+    pill.className = 'sync-pill pending';
+    pillLabel.textContent = 'Local only';
+    if (driveBtn) driveBtn.style.display = 'inline-flex';
+    if (driveStatus) driveStatus.style.display = 'none';
+    if (syncBtn) syncBtn.style.display = 'none';
+  }
+}
+
+function updateSyncPill(state) {
+  const pill = document.getElementById('sync-pill');
+  const label = document.getElementById('sync-label');
+  if (state === 'syncing') { pill.className = 'sync-pill pending'; label.textContent = 'Syncing…'; }
+  if (state === 'synced')  { pill.className = 'sync-pill synced';  label.textContent = 'Drive synced'; }
+  if (state === 'error')   { pill.className = 'sync-pill error';   label.textContent = 'Sync error'; }
+}
+
+
 function init() {
   loadData();
+
+  // Restore Drive state
+  try {
+    const d = JSON.parse(localStorage.getItem('stockroom_drive')||'{}');
+    if (d.driveConnected) { driveConnected = true; driveFileId = d.driveFileId || null; }
+  } catch(e){}
+
+  // Handle OAuth token in URL hash (popup or redirect)
+  handleOAuthRedirect();
+
   buildCountryGrid();
   buildSettingsCountrySelect();
   wizardCountry = settings.country || 'GB';
@@ -996,6 +1155,7 @@ function init() {
     document.getElementById('wizard').style.display = 'none';
   }
 
+  updateDriveUI();
   renderAll();
 }
 
