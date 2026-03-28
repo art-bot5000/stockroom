@@ -178,8 +178,7 @@
   .card-star-rating { display: flex; gap: 2px; }
   .card-star { font-size: 17px; cursor: pointer; color: var(--border); transition: color 0.1s; line-height: 1; user-select: none; }
   .card-star.on { color: #e8a838; }
-  .card-star-rating:hover .card-star { color: #e8a838; }
-  .card-star-rating:hover .card-star ~ .card-star { color: var(--border); }
+  .card-star.preview { color: #e8a838; }
   .card-rating-label { font-size: 11px; transition: color 0.1s; }
 
 
@@ -196,7 +195,20 @@
   /* ── SELECT STYLE ── */
   select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%237880a0' d='M6 8L1 3h10z'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 10px center; padding-right: 28px !important; }
 
-  /* ── SHOPPING LIST ── */
+  /* ── CARD IMAGE ── */
+  .card-image { width:100%;height:120px;object-fit:contain;border-radius:8px;background:var(--surface2);margin-bottom:12px;display:block; }
+  .card-image-placeholder { width:100%;height:80px;display:flex;align-items:center;justify-content:center;font-size:36px;background:var(--surface2);border-radius:8px;margin-bottom:12px; }
+  .img-preview-wrap { margin-top:10px;display:flex;align-items:center;gap:10px; }
+  .img-preview { width:60px;height:60px;object-fit:contain;border-radius:6px;background:var(--surface2);border:1px solid var(--border); }
+
+
+  .days-toggle { display:inline-flex; align-items:baseline; gap:3px; cursor:pointer; background:var(--surface2); border:1px solid var(--border); border-radius:99px; padding:4px 12px; transition:border-color 0.15s; user-select:none; }
+  .days-toggle:hover { border-color:var(--muted); }
+  .days-opt { font-family:var(--mono); font-size:15px; font-weight:700; transition:color 0.2s, opacity 0.2s; color:var(--text); }
+  .days-opt.faded { opacity:0.28; color:var(--muted); }
+  .days-sep { font-family:var(--mono); font-size:13px; color:var(--border); margin:0 1px; }
+
+
   .shopping-store-section { margin-bottom: 32px; }
   .shopping-store-header { display:flex; align-items:center; gap:10px; margin-bottom:14px; padding-bottom:10px; border-bottom:2px solid var(--border); }
   .shopping-store-header h3 { font-size:15px; font-weight:700; }
@@ -341,14 +353,22 @@
 
   <!-- SHOPPING LIST VIEW -->
   <div class="view" id="view-shopping">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;flex-wrap:wrap;gap:12px">
       <div>
-        <h2 style="font-size:18px;font-weight:700">Shopping List</h2>
-        <div id="shopping-subtitle" style="font-size:12px;color:var(--muted);font-family:var(--mono);margin-top:3px">Items running out in the next 30 days</div>
+        <div style="display:flex;align-items:center;gap:14px">
+          <h2 style="font-size:18px;font-weight:700">Shopping List</h2>
+          <div class="days-toggle" id="days-toggle" onclick="toggleShoppingDays()">
+            <span id="days-opt-30" class="days-opt active">30</span>
+            <span class="days-sep">/</span>
+            <span id="days-opt-7" class="days-opt faded">7</span>
+            <span style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-left:2px">days</span>
+          </div>
+        </div>
+        <div id="shopping-subtitle" style="font-size:12px;color:var(--muted);font-family:var(--mono);margin-top:4px">Items running out in the next 30 days</div>
       </div>
       <div style="display:flex;gap:8px">
         <button class="btn btn-ghost btn-sm" onclick="exportShoppingList()">⬇ Export</button>
-        <button class="btn btn-primary btn-sm" onclick="openStorePickerModal()">⚙ Change Stores</button>
+        <button class="btn btn-primary btn-sm" onclick="openStorePickerModal()">⚙ Stores</button>
       </div>
     </div>
     <div id="shopping-store-pills" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px"></div>
@@ -410,22 +430,44 @@
   </div>
 </div>
 
+<!-- ═══ STOCK COUNT MODAL ═══ -->
+<div class="modal-backdrop" id="stock-count-modal">
+  <div class="modal" style="max-width:440px">
+    <h2>🔢 Update Stock Count</h2>
+    <p class="subtitle" id="sc-subtitle">How many units do you have left right now?</p>
+    <div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:18px;font-size:13px;color:var(--muted);line-height:1.6">
+      <span id="sc-explanation">The app will calculate your actual daily consumption rate from how many you've used, then project when the remainder will run out.</span>
+    </div>
+    <div class="form-grid">
+      <div class="field">
+        <label>Units remaining</label>
+        <input type="number" id="sc-remaining" min="0" step="0.1" placeholder="e.g. 2">
+      </div>
+      <div class="field">
+        <label>Counted on</label>
+        <input type="date" id="sc-date">
+      </div>
+    </div>
+    <div id="sc-preview" style="margin-top:14px;padding:12px;background:var(--surface2);border-radius:8px;font-size:13px;display:none">
+      <span id="sc-preview-text" style="color:var(--muted)"></span>
+    </div>
+    <p style="font-size:12px;color:var(--muted);margin-top:14px">
+      To clear a stock count and return to time-based estimates, leave units blank and save.
+    </p>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('stock-count-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveStockCount()">Update</button>
+    </div>
+  </div>
+</div>
+
 <!-- ═══ STORE PICKER MODAL ═══ -->
 <div class="modal-backdrop" id="store-picker-modal">
   <div class="modal" style="max-width:480px">
-    <h2>🛍️ Create Shopping List</h2>
-    <p class="subtitle">Choose which stores to include. Only items running out within 30 days will be shown.</p>
-    <p style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px">Filter by store</p>
-    <div id="store-picker-options" style="display:flex;flex-direction:column;gap:8px;margin-bottom:20px;max-height:280px;overflow-y:auto"></div>
-    <div style="padding-top:14px;border-top:1px solid var(--border)">
-      <p style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px">Running out within</p>
-      <div style="display:flex;gap:8px;flex-wrap:wrap">
-        <button class="filter-chip active" id="days-chip-30" onclick="setShoppingDays(30,this)">30 days</button>
-        <button class="filter-chip" id="days-chip-14" onclick="setShoppingDays(14,this)">14 days</button>
-        <button class="filter-chip" id="days-chip-7" onclick="setShoppingDays(7,this)">7 days</button>
-        <button class="filter-chip" id="days-chip-60" onclick="setShoppingDays(60,this)">60 days</button>
-      </div>
-    </div>
+    <h2>🛍️ Filter by Store</h2>
+    <p class="subtitle">Choose which stores to include in your shopping list.</p>
+    <p style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px">Stores</p>
+    <div id="store-picker-options" style="display:flex;flex-direction:column;gap:8px;max-height:340px;overflow-y:auto"></div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('store-picker-modal')">Cancel</button>
       <button class="btn btn-primary" onclick="applyShoppingList()">Generate List →</button>
@@ -457,7 +499,17 @@
       <div class="field"><label>Months supply / purchase</label><input type="number" id="f-months" min="0.5" step="0.5" value="1"></div>
       <div class="field form-full">
         <label>Product URL</label>
-        <input type="url" id="f-url" placeholder="https://amazon.co.uk/..." oninput="autoFillStore()">
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="url" id="f-url" placeholder="https://amazon.co.uk/..." oninput="autoFillStore()" style="flex:1">
+          <button type="button" class="btn btn-ghost btn-sm" onclick="fetchProductImage()" id="fetch-img-btn" title="Fetch product image from URL">🖼 Fetch Image</button>
+        </div>
+        <div class="img-preview-wrap" id="img-preview-wrap" style="display:none">
+          <img id="img-preview" class="img-preview" src="" alt="Product image">
+          <div>
+            <div id="img-preview-status" style="font-size:12px;color:var(--ok);margin-bottom:4px"></div>
+            <button type="button" onclick="clearProductImage()" style="font-size:11px;color:var(--muted);background:none;border:none;cursor:pointer;text-decoration:underline;padding:0">Remove image</button>
+          </div>
+        </div>
       </div>
       <div class="field form-full">
         <label>Store name <span style="font-weight:400;color:var(--muted)">(auto-detected from URL, or enter manually for offline stores)</span></label>
@@ -684,7 +736,30 @@ const fmtDate = d => d ? new Date(d+'T12:00:00').toLocaleDateString('en-GB',{day
 function calcStock(item) {
   if (!item.logs || !item.logs.length) return null;
   const last = item.logs[item.logs.length - 1];
-  // Use startedUsing date if set, otherwise fall back to purchase date
+
+  // If a manual stock count has been recorded, use actual consumption rate
+  if (item.stockCount != null && item.stockCountDate) {
+    const totalPurchased = last.qty || 1;
+    const daysSincePurchase = (Date.now() - new Date(last.date+'T12:00:00')) / 86400000;
+    const daysSinceCount   = (Date.now() - new Date(item.stockCountDate+'T12:00:00')) / 86400000;
+    const used = totalPurchased - item.stockCount;
+
+    let daysLeft, pct;
+    if (used <= 0 || daysSincePurchase <= 0) {
+      // Nothing used yet — fall back to time-based from count date
+      const totalDays = (item.months||1) * 30.5 * totalPurchased;
+      daysLeft = Math.round(Math.max(0, totalDays - daysSincePurchase));
+      pct = Math.round(Math.max(0, Math.min(100, (item.stockCount / totalPurchased) * 100)));
+    } else {
+      // Real consumption rate: units used ÷ days elapsed
+      const ratePerDay = used / daysSincePurchase;
+      daysLeft = ratePerDay > 0 ? Math.round(Math.max(0, item.stockCount / ratePerDay)) : 9999;
+      pct = Math.round(Math.max(0, Math.min(100, (item.stockCount / totalPurchased) * 100)));
+    }
+    return { pct, daysLeft, referenceDate: item.stockCountDate, fromStockCount: true };
+  }
+
+  // Default: time-based from purchase / startedUsing date
   const referenceDate = item.startedUsing || last.date;
   const daysSince = (Date.now() - new Date(referenceDate+'T12:00:00')) / 86400000;
   const totalDays = (item.months||1) * 30.5 * (last.qty||1);
@@ -938,12 +1013,14 @@ function cardHTML(item, threshold) {
 
   return `
   <div class="item-card" style="border-left:3px solid ${color}">
+    ${item.imageUrl ? `<img class="card-image" src="${esc(item.imageUrl)}" alt="${esc(item.name)}" onerror="this.style.display='none'">` : ''}
     <div class="card-top">
       <div>
         <div class="card-category">${item.category||'Other'}</div>
         <div class="card-name">${esc(item.name)}</div>
       </div>
       <div class="card-btns">
+        <button class="btn-icon" title="Update stock count" onclick="openStockCountModal('${item.id}')">🔢</button>
         <button class="btn-icon" title="Edit" onclick="openEditModal('${item.id}')">✏️</button>
         <button class="btn-icon" title="Delete" onclick="deleteItem('${item.id}')">🗑️</button>
       </div>
@@ -963,6 +1040,9 @@ function cardHTML(item, threshold) {
       <div class="meta-item"><strong>${item.startedUsing ? fmtDate(item.startedUsing) : '—'}</strong>Started using</div>
       <div class="meta-item"><strong>${item.months||1}mo</strong>Per purchase</div>
     </div>
+    ${item.stockCount != null ? `<div style="font-size:11px;color:var(--accent2);font-family:var(--mono);margin-bottom:8px">🔢 Stock count: ${item.stockCount} units remaining · counted ${fmtDate(item.stockCountDate)}</div>` : ''}
+    ${priceTrendHTML(item)}
+    ${frequencyInsightHTML(item)}
     <div style="margin-bottom:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">${cadenceBadge}${statusBadge}</div>
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
       <div class="card-star-rating" title="Click to rate">
@@ -983,8 +1063,220 @@ function esc(str) {
 }
 
 // ═══════════════════════════════════════════
-//  STORE NAME HELPERS
+//  PRODUCT IMAGE FETCHING
 // ═══════════════════════════════════════════
+let pendingImageUrl = null; // holds fetched image URL until item is saved
+
+const CATEGORY_EMOJI = {
+  'Kitchen':'🍳', 'Bathroom':'🛁', 'Cleaning':'🧹',
+  'Food & Drink':'☕', 'Health':'💊', 'Garden':'🌱',
+  'Office':'📎', 'Other':'📦'
+};
+
+async function fetchProductImage() {
+  const url = document.getElementById('f-url').value.trim();
+  if (!url) { alert('Enter a product URL first.'); return; }
+
+  const btn = document.getElementById('fetch-img-btn');
+  const wrap = document.getElementById('img-preview-wrap');
+  const status = document.getElementById('img-preview-status');
+  const preview = document.getElementById('img-preview');
+
+  btn.textContent = '⏳ Fetching…';
+  btn.disabled = true;
+  status.textContent = '';
+  wrap.style.display = 'none';
+
+  const imageUrl = await extractOgImage(url);
+
+  btn.textContent = '🖼 Fetch Image';
+  btn.disabled = false;
+
+  if (imageUrl) {
+    pendingImageUrl = imageUrl;
+    preview.src = imageUrl;
+    preview.onerror = () => {
+      status.textContent = '⚠️ Image loaded but may not display';
+      status.style.color = 'var(--warn)';
+    };
+    status.textContent = '✓ Image found';
+    status.style.color = 'var(--ok)';
+    wrap.style.display = 'flex';
+  } else {
+    status.textContent = '';
+    pendingImageUrl = null;
+    wrap.style.display = 'none';
+    toast('No image found for this URL — the retailer may block scraping');
+  }
+}
+
+async function extractOgImage(url) {
+  // Try two CORS proxies in sequence
+  const proxies = [
+    `https://api.allorigins.win/get?url=${encodeURIComponent(url)}`,
+    `https://corsproxy.io/?${encodeURIComponent(url)}`
+  ];
+
+  for (const proxyUrl of proxies) {
+    try {
+      const res = await fetch(proxyUrl, { signal: AbortSignal.timeout(8000) });
+      if (!res.ok) continue;
+
+      let html;
+      if (proxyUrl.includes('allorigins')) {
+        const data = await res.json();
+        html = data.contents;
+      } else {
+        html = await res.text();
+      }
+
+      if (!html) continue;
+
+      // Try og:image first, then twitter:image, then first product image
+      const ogMatch = html.match(/<meta[^>]+property=["']og:image["'][^>]+content=["']([^"']+)["']/i)
+        || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+property=["']og:image["']/i)
+        || html.match(/<meta[^>]+name=["']twitter:image["'][^>]+content=["']([^"']+)["']/i)
+        || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+name=["']twitter:image["']/i);
+
+      if (ogMatch && ogMatch[1]) {
+        const imgUrl = ogMatch[1].replace(/&amp;/g, '&');
+        if (imgUrl.startsWith('http')) return imgUrl;
+      }
+    } catch(e) {
+      continue;
+    }
+  }
+  return null;
+}
+
+function clearProductImage() {
+  pendingImageUrl = null;
+  document.getElementById('img-preview-wrap').style.display = 'none';
+  document.getElementById('img-preview').src = '';
+}
+
+function showModalImagePreview(imageUrl) {
+  if (!imageUrl) { clearProductImage(); return; }
+  pendingImageUrl = imageUrl;
+  const preview = document.getElementById('img-preview');
+  const wrap = document.getElementById('img-preview-wrap');
+  const status = document.getElementById('img-preview-status');
+  preview.src = imageUrl;
+  status.textContent = '✓ Saved image';
+  status.style.color = 'var(--ok)';
+  wrap.style.display = 'flex';
+}
+
+
+
+function parsePriceValue(priceStr) {
+  if (!priceStr) return null;
+  const num = parseFloat(String(priceStr).replace(/[^0-9.]/g, ''));
+  return isNaN(num) ? null : num;
+}
+
+function getPriceHistory(item) {
+  if (!item.logs || !item.logs.length) return [];
+  return item.logs
+    .map(l => ({ date: l.date, price: parsePriceValue(l.price), raw: l.price, store: l.store }))
+    .filter(l => l.price !== null)
+    .slice(-6); // last 6 priced purchases
+}
+
+function getPriceTrend(item) {
+  const history = getPriceHistory(item);
+  if (history.length < 2) return null;
+  const last = history[history.length - 1].price;
+  const prev = history[history.length - 2].price;
+  const diff = last - prev;
+  const pct  = Math.round(Math.abs(diff) / prev * 100);
+  if (Math.abs(diff) < 0.01) return { dir: 'flat', diff: 0, pct: 0, last, prev };
+  return { dir: diff > 0 ? 'up' : 'down', diff, pct, last, prev };
+}
+
+function priceTrendHTML(item) {
+  const history = getPriceHistory(item);
+  if (!history.length) return '';
+  const last = history[history.length - 1];
+  const trend = getPriceTrend(item);
+  const lastFormatted = last.raw || `£${last.price.toFixed(2)}`;
+
+  let trendBadge = '';
+  if (trend) {
+    if (trend.dir === 'up')   trendBadge = `<span style="color:var(--danger);font-size:10px;font-family:var(--mono)">↑${trend.pct}%</span>`;
+    if (trend.dir === 'down') trendBadge = `<span style="color:var(--ok);font-size:10px;font-family:var(--mono)">↓${trend.pct}%</span>`;
+    if (trend.dir === 'flat') trendBadge = `<span style="color:var(--muted);font-size:10px;font-family:var(--mono)">→</span>`;
+  }
+
+  // Mini sparkline dots for last 4 prices
+  const sparkline = history.slice(-4).length > 1 ? (() => {
+    const prices = history.slice(-4).map(h => h.price);
+    const min = Math.min(...prices), max = Math.max(...prices);
+    const range = max - min || 1;
+    return `<span style="display:inline-flex;align-items:flex-end;gap:2px;height:14px;margin-left:4px">
+      ${prices.map(p => {
+        const h = Math.round(4 + ((p - min) / range) * 9);
+        const c = p === prices[prices.length-1] ? 'var(--accent)' : 'var(--border)';
+        return `<span style="width:3px;height:${h}px;background:${c};border-radius:1px;display:inline-block"></span>`;
+      }).join('')}
+    </span>`;
+  })() : '';
+
+  return `<div style="display:flex;align-items:center;gap:5px;font-size:11px;color:var(--muted);margin-bottom:6px">
+    <span style="font-family:var(--mono)">💰 ${esc(lastFormatted)}</span>
+    ${trendBadge}${sparkline}
+    ${history.length > 1 ? `<span style="opacity:0.5">(${history.length} prices)</span>` : ''}
+  </div>`;
+}
+
+function getFrequencyAnalysis(item) {
+  if (!item.logs || item.logs.length < 2) return null;
+  const sorted = [...item.logs].sort((a,b) => new Date(a.date) - new Date(b.date));
+  const gaps = [];
+  for (let i = 1; i < sorted.length; i++) {
+    const days = (new Date(sorted[i].date) - new Date(sorted[i-1].date)) / 86400000;
+    if (days > 0) gaps.push(days);
+  }
+  if (!gaps.length) return null;
+  const avgDays = gaps.reduce((a,b) => a+b, 0) / gaps.length;
+  const avgMonths = avgDays / 30.5;
+  const configuredMonths = item.months || 1;
+  const ratio = avgMonths / configuredMonths;
+  // Only suggest if meaningfully different (>25% off)
+  const significant = ratio < 0.75 || ratio > 1.25;
+  return { avgDays: Math.round(avgDays), avgMonths: parseFloat(avgMonths.toFixed(1)), configuredMonths, significant, purchases: sorted.length };
+}
+
+function frequencyInsightHTML(item) {
+  const f = getFrequencyAnalysis(item);
+  if (!f || !f.significant) return '';
+  const actual = f.avgMonths < 1
+    ? `~${Math.round(f.avgDays)} days`
+    : `~${f.avgMonths} months`;
+  const configured = f.configuredMonths === 1 ? '1 month' : `${f.configuredMonths} months`;
+  const faster = f.avgMonths < f.configuredMonths;
+  return `<div style="background:rgba(91,141,238,0.08);border:1px solid rgba(91,141,238,0.25);border-radius:8px;padding:8px 10px;margin-bottom:8px;font-size:11px;line-height:1.5;display:flex;align-items:flex-start;gap:8px">
+    <span>💡</span>
+    <span style="color:var(--muted)">
+      Based on ${f.purchases} purchases, you actually restock every ${actual}
+      — ${faster ? 'faster' : 'slower'} than your configured ${configured}.
+      <button onclick="applyFrequencySuggestion('${item.id}',${f.avgMonths})" style="background:none;border:none;color:var(--accent2);cursor:pointer;font-size:11px;font-family:var(--sans);text-decoration:underline;padding:0;margin-left:4px">Update setting</button>
+    </span>
+  </div>`;
+}
+
+function applyFrequencySuggestion(id, avgMonths) {
+  const item = items.find(i => i.id === id);
+  if (!item) return;
+  const rounded = Math.max(0.5, Math.round(avgMonths * 2) / 2); // round to nearest 0.5
+  item.months = rounded;
+  saveData();
+  renderAll();
+  toast(`Updated to ${rounded} month${rounded !== 1 ? 's' : ''} per purchase ✓`);
+  if (driveConnected) setTimeout(syncNow, 400);
+}
+
+
 const DOMAIN_STORE_MAP = {
   'amazon.co.uk': 'Amazon UK', 'amazon.com': 'Amazon US', 'amazon.ca': 'Amazon CA',
   'amazon.com.au': 'Amazon AU', 'amazon.de': 'Amazon DE', 'amazon.fr': 'Amazon FR',
@@ -1070,16 +1362,22 @@ function renderReport() {
   const makeTable = entries => {
     if (!entries.length) return '<p style="color:var(--muted);font-size:13px;padding:10px 0">None</p>';
     return `<table class="report-table">
-      <thead><tr><th>Item</th><th>Category</th><th>Rating</th><th>Est. %</th><th>Days Left</th><th>Buy</th></tr></thead>
-      <tbody>${entries.map(({item,pct,daysLeft}) => `
+      <thead><tr><th>Item</th><th>Category</th><th>Rating</th><th>Last Price</th><th>Est. %</th><th>Days Left</th><th>Buy</th></tr></thead>
+      <tbody>${entries.map(({item,pct,daysLeft}) => {
+        const history = getPriceHistory(item);
+        const trend = getPriceTrend(item);
+        const lastPrice = history.length ? history[history.length-1].raw || `£${history[history.length-1].price.toFixed(2)}` : '—';
+        const trendStr = trend ? (trend.dir==='up'?` <span style="color:#e85050">↑${trend.pct}%</span>`:trend.dir==='down'?` <span style="color:#4cbb8a">↓${trend.pct}%</span>`:'') : '';
+        return `
         <tr>
           <td><strong>${esc(item.name)}</strong></td>
           <td style="color:var(--muted)">${esc(item.category||'Other')}</td>
           <td>${starsHTML(item.rating)}</td>
+          <td style="font-family:var(--mono);font-size:12px">${esc(lastPrice)}${trendStr}</td>
           <td style="font-family:var(--mono);font-weight:700;color:${STATUS_COLOR[getStatus(pct,threshold)]}">${pct!==null?pct+'%':'—'}</td>
           <td style="font-family:var(--mono)">${daysLeft!==null?daysLeft+'d':'—'}</td>
           <td>${item.url?`<a href="${esc(item.url)}" target="_blank" rel="noopener" style="color:var(--accent2);font-size:12px;text-decoration:none">Buy ↗</a>`:'—'}</td>
-        </tr>`).join('')}
+        </tr>`;}).join('')}
       </tbody></table>`;
   };
 
@@ -1107,24 +1405,28 @@ function exportReport() {
 function rateItem(id, val) {
   const item = items.find(i => i.id === id);
   if (!item) return;
-  // Toggle off if clicking the same rating
   item.rating = item.rating === val ? null : val;
   saveData();
   if (driveConnected) setTimeout(syncNow, 400);
-  // Update stars in place without full re-render
-  resetCardStars(id);
+  // Update stars in place — clear preview, set on
+  const rating = item.rating || 0;
+  document.querySelectorAll(`.card-star[data-id="${id}"]`).forEach(s => {
+    s.classList.remove('preview');
+    s.classList.toggle('on', parseInt(s.dataset.val) <= rating);
+  });
   const label = document.getElementById('rl-' + id);
   if (label) {
     label.textContent = item.rating ? RATING_LABELS[item.rating] : 'Not rated';
     label.style.color = !item.rating ? 'var(--muted)' : item.rating <= 2 ? 'var(--danger)' : item.rating >= 4 ? 'var(--ok)' : 'var(--muted)';
   }
-  // Keep edit modal in sync if open
   currentRating = item.rating || 0;
 }
 
 function previewCardStars(id, val) {
   document.querySelectorAll(`.card-star[data-id="${id}"]`).forEach(s => {
-    s.classList.toggle('on', parseInt(s.dataset.val) <= val);
+    const n = parseInt(s.dataset.val);
+    s.classList.toggle('preview', n <= val);
+    s.classList.remove('on');
   });
   const item = items.find(i => i.id === id);
   const label = document.getElementById('rl-' + id);
@@ -1138,7 +1440,9 @@ function resetCardStars(id) {
   const item = items.find(i => i.id === id);
   const rating = item?.rating || 0;
   document.querySelectorAll(`.card-star[data-id="${id}"]`).forEach(s => {
-    s.classList.toggle('on', parseInt(s.dataset.val) <= rating);
+    const n = parseInt(s.dataset.val);
+    s.classList.remove('preview');
+    s.classList.toggle('on', n <= rating);
   });
   const label = document.getElementById('rl-' + id);
   if (label) {
@@ -1148,7 +1452,103 @@ function resetCardStars(id) {
 }
 
 
-let shoppingStores = new Set(['__all__']); // '__all__' = all stores selected
+// ═══════════════════════════════════════════
+//  STOCK COUNT
+// ═══════════════════════════════════════════
+let stockCountId = null;
+
+function openStockCountModal(id) {
+  stockCountId = id;
+  const item = items.find(i => i.id === id);
+  if (!item) return;
+  const last = item.logs?.at(-1);
+  const totalPurchased = last?.qty || 1;
+
+  document.getElementById('sc-subtitle').textContent = `How many units of "${item.name}" do you have left?`;
+  document.getElementById('sc-explanation').textContent =
+    `You last bought ${totalPurchased} unit${totalPurchased!==1?'s':''} on ${fmtDate(last?.date)}. ` +
+    `Enter how many you have now — the app will calculate your actual consumption rate and project when you'll run out.`;
+  document.getElementById('sc-remaining').value = item.stockCount != null ? item.stockCount : '';
+  document.getElementById('sc-date').value = today();
+  document.getElementById('sc-preview').style.display = 'none';
+
+  const remaining = document.getElementById('sc-remaining');
+  const dateEl = document.getElementById('sc-date');
+  const preview = () => updateStockCountPreview(item);
+  remaining.oninput = preview;
+  dateEl.onchange = preview;
+
+  if (item.stockCount != null) updateStockCountPreview(item);
+  openModal('stock-count-modal');
+}
+
+function updateStockCountPreview(item) {
+  const remaining = parseFloat(document.getElementById('sc-remaining').value);
+  const countDate = document.getElementById('sc-date').value;
+  const preview = document.getElementById('sc-preview');
+  const previewText = document.getElementById('sc-preview-text');
+
+  if (isNaN(remaining) || !countDate) { preview.style.display = 'none'; return; }
+
+  const last = item.logs?.at(-1);
+  const totalPurchased = last?.qty || 1;
+  const daysSincePurchase = (Date.now() - new Date((last?.date||countDate)+'T12:00:00')) / 86400000;
+  const used = totalPurchased - remaining;
+
+  let daysLeft;
+  if (used <= 0 || daysSincePurchase <= 0) {
+    const totalDays = (item.months||1) * 30.5 * totalPurchased;
+    daysLeft = Math.round(Math.max(0, totalDays - daysSincePurchase));
+  } else {
+    const ratePerDay = used / daysSincePurchase;
+    daysLeft = ratePerDay > 0 ? Math.round(remaining / ratePerDay) : null;
+  }
+
+  const pct = Math.round(Math.max(0, Math.min(100, (remaining / totalPurchased) * 100)));
+  const runOutDate = daysLeft != null
+    ? new Date(Date.now() + daysLeft * 86400000).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'})
+    : 'unknown';
+
+  let msg;
+  if (used > 0 && daysSincePurchase > 0) {
+    const ratePerDay = used / daysSincePurchase;
+    msg = `Used ${used.toFixed(1)} of ${totalPurchased} in ${Math.round(daysSincePurchase)} days ` +
+          `(${ratePerDay.toFixed(2)}/day). ` +
+          `${remaining} left → runs out ~${runOutDate} (${daysLeft ?? '?'} days, ${pct}% remaining).`;
+  } else {
+    msg = `${remaining} of ${totalPurchased} units remaining (${pct}%) → runs out ~${runOutDate}.`;
+  }
+
+  previewText.textContent = msg;
+  previewText.style.color = pct <= 15 ? 'var(--danger)' : pct <= 30 ? 'var(--warn)' : 'var(--ok)';
+  preview.style.display = 'block';
+}
+
+function saveStockCount() {
+  const item = items.find(i => i.id === stockCountId);
+  if (!item) return;
+  const val = document.getElementById('sc-remaining').value.trim();
+  const countDate = document.getElementById('sc-date').value;
+
+  if (val === '') {
+    item.stockCount = null;
+    item.stockCountDate = null;
+  } else {
+    item.stockCount = parseFloat(val);
+    item.stockCountDate = countDate || today();
+  }
+
+  saveData();
+  closeModal('stock-count-modal');
+  renderAll();
+  toast(val === '' ? 'Stock count cleared' : 'Stock count updated ✓');
+  if (driveConnected) setTimeout(syncNow, 400);
+}
+
+// ═══════════════════════════════════════════
+//  SHOPPING LIST
+// ═══════════════════════════════════════════
+let shoppingStores = new Set(['__all__']);
 let shoppingDays = 30;
 
 function showView(name, btn) {
@@ -1226,12 +1626,6 @@ function openStorePickerModal() {
 
   container.innerHTML = html;
 
-  // Reset days chips
-  [7,14,30,60].forEach(d => {
-    const chip = document.getElementById('days-chip-'+d);
-    if (chip) chip.classList.toggle('active', d === shoppingDays);
-  });
-
   openModal('store-picker-modal');
 }
 
@@ -1262,10 +1656,13 @@ function toggleStorePick(store, row) {
   }
 }
 
-function setShoppingDays(days, btn) {
-  shoppingDays = days;
-  document.querySelectorAll('#store-picker-modal .filter-chip').forEach(c => c.classList.remove('active'));
-  btn.classList.add('active');
+function toggleShoppingDays() {
+  shoppingDays = shoppingDays === 30 ? 7 : 30;
+  document.getElementById('days-opt-30').classList.toggle('active', shoppingDays === 30);
+  document.getElementById('days-opt-30').classList.toggle('faded', shoppingDays !== 30);
+  document.getElementById('days-opt-7').classList.toggle('active', shoppingDays === 7);
+  document.getElementById('days-opt-7').classList.toggle('faded', shoppingDays !== 7);
+  renderShoppingList();
 }
 
 function applyShoppingList() {
@@ -1418,6 +1815,8 @@ function openAddModal() {
   document.getElementById('f-qty').value = 1;
   document.getElementById('f-months').value = 1;
   document.getElementById('f-url').value = '';
+  pendingImageUrl = null;
+  clearProductImage();
   const storeField = document.getElementById('f-store');
   storeField.value = '';
   storeField.dataset.manual = '';
@@ -1445,6 +1844,8 @@ function openEditModal(id) {
   document.getElementById('f-qty').value = item.qty||1;
   document.getElementById('f-months').value = item.months||1;
   document.getElementById('f-url').value = item.url||'';
+  pendingImageUrl = item.imageUrl || null;
+  showModalImagePreview(item.imageUrl || null);
   const storeField = document.getElementById('f-store');
   storeField.value = item.store || urlToStoreName(item.url||'');
   storeField.dataset.manual = item.store ? '1' : '';
@@ -1476,12 +1877,44 @@ function openLogModal(id) {
   const histEntries = document.getElementById('log-history-entries');
   if (item.logs && item.logs.length) {
     histWrap.style.display = 'block';
-    histEntries.innerHTML = [...item.logs].reverse().slice(0,8).map(l => `
-      <div class="log-entry">
-        <span style="color:var(--muted)">${esc(l.store)||'—'}</span>
+    const pricedLogs = [...item.logs].filter(l => l.price).map(l => parsePriceValue(l.price)).filter(p => p !== null);
+    const minPrice = pricedLogs.length ? Math.min(...pricedLogs) : null;
+    const maxPrice = pricedLogs.length ? Math.max(...pricedLogs) : null;
+
+    histEntries.innerHTML = [...item.logs].reverse().slice(0,8).map((l, i, arr) => {
+      const thisPrice = parsePriceValue(l.price);
+      const prevLog = arr[i + 1]; // next in reversed array = previous purchase
+      const prevPrice = prevLog ? parsePriceValue(prevLog.price) : null;
+      let priceTrendEl = '';
+      if (thisPrice !== null && prevPrice !== null) {
+        const diff = thisPrice - prevPrice;
+        if (Math.abs(diff) >= 0.01) {
+          priceTrendEl = diff > 0
+            ? `<span style="color:var(--danger);font-size:10px;font-family:var(--mono)">↑</span>`
+            : `<span style="color:var(--ok);font-size:10px;font-family:var(--mono)">↓</span>`;
+        }
+      }
+      const isCheapest = thisPrice !== null && thisPrice === minPrice && pricedLogs.length > 1;
+      const isMostExp  = thisPrice !== null && thisPrice === maxPrice && pricedLogs.length > 1 && minPrice !== maxPrice;
+      return `<div class="log-entry">
+        <span style="color:var(--muted);font-size:12px">${esc(l.store)||'—'}</span>
         <span style="color:var(--muted);font-family:var(--mono);font-size:11px">${fmtDate(l.date)}</span>
-        <span style="font-weight:700;font-family:var(--mono)">×${l.qty}${l.price?' · '+esc(l.price):''}</span>
-      </div>`).join('');
+        <span style="font-family:var(--mono);font-size:12px;display:flex;align-items:center;gap:4px">
+          ×${l.qty}
+          ${l.price ? `<span style="color:${isCheapest?'var(--ok)':isMostExp?'var(--danger)':'var(--text)'};font-weight:700">${esc(l.price)}</span>${priceTrendEl}${isCheapest?'<span title="Cheapest price" style="font-size:10px">🏷</span>':''}` : ''}
+        </span>
+      </div>`;
+    }).join('');
+
+    // Summary line if prices available
+    if (pricedLogs.length >= 2) {
+      const avg = (pricedLogs.reduce((a,b)=>a+b,0) / pricedLogs.length).toFixed(2);
+      histEntries.innerHTML += `<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:11px;color:var(--muted);font-family:var(--mono);display:flex;gap:16px">
+        <span>avg £${avg}</span>
+        <span style="color:var(--ok)">low £${minPrice.toFixed(2)}</span>
+        <span style="color:var(--danger)">high £${maxPrice.toFixed(2)}</span>
+      </div>`;
+    }
   } else {
     histWrap.style.display = 'none';
   }
@@ -1511,6 +1944,7 @@ function saveItem() {
       item.notes        = document.getElementById('f-notes').value.trim();
       item.startedUsing = startedUsing;
       item.rating       = currentRating || null;
+      item.imageUrl     = pendingImageUrl || item.imageUrl || null;
 
       // Update the most recent log entry's date and qty
       const lastDate = document.getElementById('f-last-date').value;
@@ -1540,6 +1974,7 @@ function saveItem() {
       notes:        document.getElementById('f-notes').value.trim(),
       startedUsing,
       rating:       currentRating || null,
+      imageUrl:     pendingImageUrl || null,
       logs:         lastDate ? [{ id:uid(), date:lastDate, qty:lastQty, price:'', store: storeVal }] : []
     });
   }
