@@ -175,6 +175,12 @@
   .star-rating:hover .star { color: #e8a838; }
   .star-rating:hover .star ~ .star { color: var(--border); }
   .card-stars { font-size: 13px; letter-spacing: 1px; }
+  .card-star-rating { display: flex; gap: 2px; }
+  .card-star { font-size: 17px; cursor: pointer; color: var(--border); transition: color 0.1s; line-height: 1; user-select: none; }
+  .card-star.on { color: #e8a838; }
+  .card-star-rating:hover .card-star { color: #e8a838; }
+  .card-star-rating:hover .card-star ~ .card-star { color: var(--border); }
+  .card-rating-label { font-size: 11px; transition: color 0.1s; }
 
 
   .sync-pill { font-family: var(--mono); font-size: 11px; padding: 5px 10px; border-radius: 99px; display: flex; align-items: center; gap: 6px; }
@@ -364,6 +370,8 @@
       </div>
     </div>
 
+    <div class="settings-card">
+      <h3>⚙️ Preferences</h3>
       <div class="setting-row">
         <div class="setting-info"><h4>Low stock warning</h4><p>Warn when stock drops below this %</p></div>
         <select id="setting-threshold" onchange="saveSettings()" style="width:90px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 28px 6px 8px;font-family:var(--sans);font-size:13px">
@@ -955,7 +963,16 @@ function cardHTML(item, threshold) {
       <div class="meta-item"><strong>${item.startedUsing ? fmtDate(item.startedUsing) : '—'}</strong>Started using</div>
       <div class="meta-item"><strong>${item.months||1}mo</strong>Per purchase</div>
     </div>
-    <div style="margin-bottom:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">${cadenceBadge}${statusBadge}${starsHTML(item.rating)}</div>
+    <div style="margin-bottom:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">${cadenceBadge}${statusBadge}</div>
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+      <div class="card-star-rating" title="Click to rate">
+        ${[1,2,3,4,5].map(n => `<span class="card-star${(item.rating||0)>=n?' on':''}" onclick="rateItem('${item.id}',${n})" data-id="${item.id}" data-val="${n}"
+          onmouseover="previewCardStars('${item.id}',${n})" onmouseout="resetCardStars('${item.id}')">★</span>`).join('')}
+      </div>
+      <span class="card-rating-label" id="rl-${item.id}" style="font-size:11px;color:${!item.rating?'var(--muted)':item.rating<=2?'var(--danger)':item.rating>=4?'var(--ok)':'var(--muted)'}">
+        ${item.rating ? RATING_LABELS[item.rating] : 'Not rated'}
+      </span>
+    </div>
     ${item.url ? `<a class="card-link" href="${esc(item.url)}" target="_blank" rel="noopener">🛒 Buy now ↗</a>` : ''}
     <button class="btn btn-ghost btn-sm log-btn" onclick="openLogModal('${item.id}')">+ Log Purchase</button>
   </div>`;
@@ -1087,9 +1104,50 @@ function exportReport() {
   win.document.close(); win.print();
 }
 
-// ═══════════════════════════════════════════
-//  SHOPPING LIST
-// ═══════════════════════════════════════════
+function rateItem(id, val) {
+  const item = items.find(i => i.id === id);
+  if (!item) return;
+  // Toggle off if clicking the same rating
+  item.rating = item.rating === val ? null : val;
+  saveData();
+  if (driveConnected) setTimeout(syncNow, 400);
+  // Update stars in place without full re-render
+  resetCardStars(id);
+  const label = document.getElementById('rl-' + id);
+  if (label) {
+    label.textContent = item.rating ? RATING_LABELS[item.rating] : 'Not rated';
+    label.style.color = !item.rating ? 'var(--muted)' : item.rating <= 2 ? 'var(--danger)' : item.rating >= 4 ? 'var(--ok)' : 'var(--muted)';
+  }
+  // Keep edit modal in sync if open
+  currentRating = item.rating || 0;
+}
+
+function previewCardStars(id, val) {
+  document.querySelectorAll(`.card-star[data-id="${id}"]`).forEach(s => {
+    s.classList.toggle('on', parseInt(s.dataset.val) <= val);
+  });
+  const item = items.find(i => i.id === id);
+  const label = document.getElementById('rl-' + id);
+  if (label) {
+    label.textContent = RATING_LABELS[val] || '';
+    label.style.color = val <= 2 ? 'var(--danger)' : val >= 4 ? 'var(--ok)' : 'var(--muted)';
+  }
+}
+
+function resetCardStars(id) {
+  const item = items.find(i => i.id === id);
+  const rating = item?.rating || 0;
+  document.querySelectorAll(`.card-star[data-id="${id}"]`).forEach(s => {
+    s.classList.toggle('on', parseInt(s.dataset.val) <= rating);
+  });
+  const label = document.getElementById('rl-' + id);
+  if (label) {
+    label.textContent = rating ? RATING_LABELS[rating] : 'Not rated';
+    label.style.color = !rating ? 'var(--muted)' : rating <= 2 ? 'var(--danger)' : rating >= 4 ? 'var(--ok)' : 'var(--muted)';
+  }
+}
+
+
 let shoppingStores = new Set(['__all__']); // '__all__' = all stores selected
 let shoppingDays = 30;
 
