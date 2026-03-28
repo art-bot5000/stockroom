@@ -204,12 +204,13 @@
       <h1 style="font-size:26px;font-weight:700;margin-bottom:8px">STOCKROOM</h1>
       <p style="color:var(--muted);font-size:14px;line-height:1.7;margin-bottom:28px">Never run out of the essentials. Track household consumables, estimate your stock, and get reminded before you're empty.</p>
       <div class="wizard-features">
-        <div class="wizard-feature"><div class="feat-icon">📊</div><h4>Stock Estimates</h4><p>See how much you have left at a glance</p></div>
+        <div class="wizard-feature"><div class="feat-icon">📊</div><h4>Stock Estimates</h4><p>See how much of each item you have left at a glance</p></div>
         <div class="wizard-feature"><div class="feat-icon">🔔</div><h4>Monthly Reports</h4><p>Know what to reorder before you run out</p></div>
-        <div class="wizard-feature"><div class="feat-icon">🛒</div><h4>Price Checker</h4><p>Compare prices at your local stores</p></div>
-        <div class="wizard-feature"><div class="feat-icon">💾</div><h4>Local Storage</h4><p>Your data stays in your browser</p></div>
+        <div class="wizard-feature"><div class="feat-icon">🛒</div><h4>Price Checker</h4><p>Compare prices at your local stores instantly</p></div>
+        <div class="wizard-feature"><div class="feat-icon">☁️</div><h4>Google Drive Sync</h4><p>Your data syncs to your own Drive — access anywhere</p></div>
       </div>
-      <button class="btn btn-primary btn-xl full" onclick="wizardNext()">Next →</button>
+      <button class="btn btn-blue btn-xl full" style="margin-bottom:10px" onclick="wizardConnectDrive()">☁️ Connect Google Drive &amp; Continue</button>
+      <button class="btn btn-ghost btn-xl full" onclick="wizardNext()">Continue without Drive →</button>
     </div>
 
     <!-- Step 2: Country -->
@@ -253,13 +254,19 @@
       <h2 style="font-size:18px;font-weight:700">Your Stockroom</h2>
       <span id="item-count" style="font-size:12px;color:var(--muted)">0 items</span>
     </div>
-    <div id="filter-bar">
-      <button class="filter-chip active" onclick="setFilter('all',this)">All</button>
-      <button class="filter-chip" onclick="setFilter('critical',this)">🔴 Critical</button>
-      <button class="filter-chip" onclick="setFilter('warn',this)">🟡 Low</button>
-      <button class="filter-chip" onclick="setFilter('ok',this)">🟢 Good</button>
-      <button class="filter-chip" onclick="setFilter('monthly',this)">Monthly</button>
-      <button class="filter-chip" onclick="setFilter('bulk',this)">Bulk</button>
+    <div style="margin-bottom:18px">
+      <div id="filter-bar" style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+        <button class="filter-chip active" onclick="setFilter('status','all',this)">All</button>
+        <button class="filter-chip" onclick="setFilter('status','critical',this)">🔴 Critical</button>
+        <button class="filter-chip" onclick="setFilter('status','warn',this)">🟡 Low</button>
+        <button class="filter-chip" onclick="setFilter('status','ok',this)">🟢 Good</button>
+        <button class="filter-chip" onclick="setFilter('cadence','monthly',this)">🗓️ Monthly</button>
+        <button class="filter-chip" onclick="setFilter('cadence','bulk',this)">📦 Bulk</button>
+      </div>
+      <div id="store-filter-bar" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <span style="font-size:11px;color:var(--muted);font-family:var(--mono);letter-spacing:0.5px;text-transform:uppercase">Store:</span>
+        <button class="filter-chip active" onclick="setStoreFilter('all',this)">All Stores</button>
+      </div>
     </div>
     <div id="items-grid"></div>
   </div>
@@ -522,7 +529,9 @@ let items = [];
 let settings = { threshold: 20, country: 'GB' };
 let editingId = null;
 let loggingId = null;
-let activeFilter = 'all';
+let activeFilter = 'all';      // status: all | critical | warn | ok
+let activeCadence = 'all';    // cadence: all | monthly | bulk
+let activeStore = 'all';      // store name or 'all'
 let wizardCountry = 'GB';
 
 // Drive state
@@ -601,6 +610,12 @@ function updateCountryConfirm() {
   if (el && c) el.textContent = `✓ Using ${c.flag} ${c.name} stores`;
 }
 
+function wizardConnectDrive() {
+  connectDrive();
+  // After OAuth the page will reload via hash — advance wizard past step 1 flag
+  localStorage.setItem('stockroom_wizard_step', '2');
+}
+
 function wizardNext() {
   document.getElementById('wizard-step-1').classList.remove('active');
   document.getElementById('wizard-step-2').classList.add('active');
@@ -639,18 +654,51 @@ function showView(name, btn) {
   if (name === 'report') renderReport();
 }
 
-function setFilter(f, btn) {
-  activeFilter = f;
-  document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+function setFilter(type, value, btn) {
+  if (type === 'status') {
+    activeFilter = value;
+    // deactivate all status + cadence chips, activate clicked
+    document.querySelectorAll('#filter-bar .filter-chip').forEach(c => c.classList.remove('active'));
+  } else {
+    activeCadence = activeCadence === value ? 'all' : value;
+    // toggle cadence chips
+    document.querySelectorAll('#filter-bar .filter-chip').forEach(c => {
+      if (c.textContent.includes('Monthly') || c.textContent.includes('Bulk')) c.classList.remove('active');
+    });
+  }
+  if (btn) btn.classList.add('active');
+  if (activeCadence === 'all' && type === 'cadence') btn.classList.remove('active');
+  renderGrid();
+}
+
+function setStoreFilter(store, btn) {
+  activeStore = store;
+  document.querySelectorAll('#store-filter-bar .filter-chip').forEach(c => c.classList.remove('active'));
   btn.classList.add('active');
   renderGrid();
 }
+
+function buildStoreFilterBar() {
+  const bar = document.getElementById('store-filter-bar');
+  // Collect unique stores from purchase logs
+  const storeSet = new Set();
+  items.forEach(item => (item.logs||[]).forEach(l => { if (l.store && l.store.trim()) storeSet.add(l.store.trim()); }));
+  const stores = [...storeSet].sort();
+
+  // Keep the label span + "All Stores" btn, rebuild the rest
+  bar.innerHTML = `<span style="font-size:11px;color:var(--muted);font-family:var(--mono);letter-spacing:0.5px;text-transform:uppercase">Store:</span>
+    <button class="filter-chip${activeStore==='all'?' active':''}" onclick="setStoreFilter('all',this)">All Stores</button>
+    ${stores.map(s => `<button class="filter-chip${activeStore===s?' active':''}" onclick="setStoreFilter('${s.replace(/'/g,"\\'")}',this)">${esc(s)}</button>`).join('')}`;
+}
+
+
 
 // ═══════════════════════════════════════════
 //  RENDER DASHBOARD
 // ═══════════════════════════════════════════
 function renderAll() {
   document.getElementById('item-count').textContent = items.length + ' item' + (items.length!==1?'s':'');
+  buildStoreFilterBar();
   renderGrid();
   // sync settings UI
   document.getElementById('setting-threshold').value = settings.threshold;
@@ -664,11 +712,19 @@ function renderGrid() {
   let filtered = items.filter(item => {
     const s = calcStock(item);
     const status = getStatus(s?.pct ?? null, threshold);
-    if (activeFilter === 'critical') return status === 'critical';
-    if (activeFilter === 'warn') return status === 'warn';
-    if (activeFilter === 'ok') return status === 'ok';
-    if (activeFilter === 'monthly') return item.cadence === 'monthly';
-    if (activeFilter === 'bulk') return item.cadence === 'bulk';
+
+    // Status filter
+    if (activeFilter !== 'all' && status !== activeFilter) return false;
+
+    // Cadence filter
+    if (activeCadence !== 'all' && item.cadence !== activeCadence) return false;
+
+    // Store filter — item matches if any log entry was from that store
+    if (activeStore !== 'all') {
+      const hasStore = (item.logs||[]).some(l => l.store && l.store.trim() === activeStore);
+      if (!hasStore) return false;
+    }
+
     return true;
   });
 
@@ -1143,7 +1199,7 @@ function init() {
     if (d.driveConnected) { driveConnected = true; driveFileId = d.driveFileId || null; }
   } catch(e){}
 
-  // Handle OAuth token in URL hash (popup or redirect)
+  // Handle OAuth token in URL hash
   handleOAuthRedirect();
 
   buildCountryGrid();
@@ -1151,8 +1207,15 @@ function init() {
   wizardCountry = settings.country || 'GB';
   selectCountry(wizardCountry);
 
-  if (localStorage.getItem('stockroom_seen')) {
+  const seen = localStorage.getItem('stockroom_seen');
+  const wizardStep = localStorage.getItem('stockroom_wizard_step');
+
+  if (seen) {
     document.getElementById('wizard').style.display = 'none';
+  } else if (wizardStep === '2' || driveConnected) {
+    // Resume at country step after Drive connect
+    localStorage.removeItem('stockroom_wizard_step');
+    wizardNext();
   }
 
   updateDriveUI();
