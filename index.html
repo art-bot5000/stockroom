@@ -357,7 +357,14 @@
       </div>
       <div class="field"><label>Units per purchase</label><input type="number" id="f-qty" min="0.1" step="0.1" value="1"></div>
       <div class="field"><label>Months supply / purchase</label><input type="number" id="f-months" min="0.5" step="0.5" value="1"></div>
-      <div class="field form-full"><label>Product URL</label><input type="url" id="f-url" placeholder="https://amazon.co.uk/..."></div>
+      <div class="field form-full">
+        <label>Product URL</label>
+        <input type="url" id="f-url" placeholder="https://amazon.co.uk/..." oninput="autoFillStore()">
+      </div>
+      <div class="field form-full">
+        <label>Store name <span style="font-weight:400;color:var(--muted)">(auto-detected from URL, or enter manually for offline stores)</span></label>
+        <input type="text" id="f-store" placeholder="e.g. Costco, Waitrose, Local Pharmacy..." oninput="this.dataset.manual=this.value?'1':''">
+      </div>
       <div class="field form-full"><label>Notes</label><input type="text" id="f-notes" placeholder="Any notes about this item..."></div>
     </div>
 
@@ -366,6 +373,10 @@
       <div class="form-grid">
         <div class="field"><label>Date purchased</label><input type="date" id="f-last-date"></div>
         <div class="field"><label>Qty purchased</label><input type="number" id="f-last-qty" min="0.1" step="0.1" value="1"></div>
+        <div class="field"><label>Started using</label><input type="date" id="f-started-using"></div>
+        <div class="field" style="display:flex;align-items:flex-end;padding-bottom:2px">
+          <p style="font-size:12px;color:var(--muted);line-height:1.5">If bought before opening, set the date you actually started using it — this gives a more accurate stock estimate.</p>
+        </div>
       </div>
     </div>
 
@@ -391,7 +402,11 @@
       <div class="field"><label>Date purchased</label><input type="date" id="log-date"></div>
       <div class="field"><label>Quantity</label><input type="number" id="log-qty" min="0.1" step="0.1" value="1"></div>
       <div class="field"><label>Price paid (optional)</label><input type="text" id="log-price" placeholder="e.g. £12.99"></div>
-      <div class="field"><label>Store / source</label><input type="text" id="log-store" placeholder="Amazon, Costco, Tesco..."></div>
+      <div class="field"><label>Store <span style="font-weight:400;color:var(--muted)">(auto-filled from item)</span></label><input type="text" id="log-store" placeholder="Amazon, Costco, Tesco..."></div>
+      <div class="field"><label>Started using</label><input type="date" id="log-started-using"></div>
+      <div class="field" style="display:flex;align-items:flex-end;padding-bottom:2px">
+        <p style="font-size:12px;color:var(--muted);line-height:1.5">Leave blank if you started using it straight away.</p>
+      </div>
     </div>
     <div id="log-history" class="modal-section" style="display:none">
       <p style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px">Purchase History</p>
@@ -549,11 +564,13 @@ const fmtDate = d => d ? new Date(d+'T12:00:00').toLocaleDateString('en-GB',{day
 function calcStock(item) {
   if (!item.logs || !item.logs.length) return null;
   const last = item.logs[item.logs.length - 1];
-  const daysSince = (Date.now() - new Date(last.date+'T12:00:00')) / 86400000;
+  // Use startedUsing date if set, otherwise fall back to purchase date
+  const referenceDate = item.startedUsing || last.date;
+  const daysSince = (Date.now() - new Date(referenceDate+'T12:00:00')) / 86400000;
   const totalDays = (item.months||1) * 30.5 * (last.qty||1);
   const pct = Math.round(Math.max(0, Math.min(100, (1 - daysSince/totalDays)*100)));
   const daysLeft = Math.round(Math.max(0, totalDays - daysSince));
-  return { pct, daysLeft };
+  return { pct, daysLeft, referenceDate };
 }
 
 function getStatus(pct, threshold) {
@@ -680,12 +697,15 @@ function setStoreFilter(store, btn) {
 
 function buildStoreFilterBar() {
   const bar = document.getElementById('store-filter-bar');
-  // Collect unique stores from purchase logs
   const storeSet = new Set();
-  items.forEach(item => (item.logs||[]).forEach(l => { if (l.store && l.store.trim()) storeSet.add(l.store.trim()); }));
+  items.forEach(item => {
+    // Primary: item-level store name
+    if (item.store && item.store.trim()) storeSet.add(item.store.trim());
+    // Also collect from log entries (for legacy data)
+    (item.logs||[]).forEach(l => { if (l.store && l.store.trim()) storeSet.add(l.store.trim()); });
+  });
   const stores = [...storeSet].sort();
 
-  // Keep the label span + "All Stores" btn, rebuild the rest
   bar.innerHTML = `<span style="font-size:11px;color:var(--muted);font-family:var(--mono);letter-spacing:0.5px;text-transform:uppercase">Store:</span>
     <button class="filter-chip${activeStore==='all'?' active':''}" onclick="setStoreFilter('all',this)">All Stores</button>
     ${stores.map(s => `<button class="filter-chip${activeStore===s?' active':''}" onclick="setStoreFilter('${s.replace(/'/g,"\\'")}',this)">${esc(s)}</button>`).join('')}`;
@@ -719,10 +739,11 @@ function renderGrid() {
     // Cadence filter
     if (activeCadence !== 'all' && item.cadence !== activeCadence) return false;
 
-    // Store filter — item matches if any log entry was from that store
+    // Store filter — match item-level store, or any log entry
     if (activeStore !== 'all') {
-      const hasStore = (item.logs||[]).some(l => l.store && l.store.trim() === activeStore);
-      if (!hasStore) return false;
+      const itemStore = item.store && item.store.trim() === activeStore;
+      const logStore = (item.logs||[]).some(l => l.store && l.store.trim() === activeStore);
+      if (!itemStore && !logStore) return false;
     }
 
     return true;
@@ -791,6 +812,7 @@ function cardHTML(item, threshold) {
     <div class="card-meta">
       <div class="meta-item"><strong>${daysLeft !== null ? daysLeft+'d left' : 'No data'}</strong>Est. remaining</div>
       <div class="meta-item"><strong>${fmtDate(lastLog?.date)}</strong>Last bought</div>
+      <div class="meta-item"><strong>${item.startedUsing ? fmtDate(item.startedUsing) : '—'}</strong>Started using</div>
       <div class="meta-item"><strong>${item.months||1}mo</strong>Per purchase</div>
     </div>
     <div style="margin-bottom:8px">${cadenceBadge}${statusBadge}</div>
@@ -804,8 +826,70 @@ function esc(str) {
 }
 
 // ═══════════════════════════════════════════
-//  REPORT
+//  STORE NAME HELPERS
 // ═══════════════════════════════════════════
+const DOMAIN_STORE_MAP = {
+  'amazon.co.uk': 'Amazon UK', 'amazon.com': 'Amazon US', 'amazon.ca': 'Amazon CA',
+  'amazon.com.au': 'Amazon AU', 'amazon.de': 'Amazon DE', 'amazon.fr': 'Amazon FR',
+  'amazon.es': 'Amazon ES', 'amazon.it': 'Amazon IT', 'amazon.nl': 'Amazon NL',
+  'amazon.co.jp': 'Amazon JP',
+  'costco.co.uk': 'Costco UK', 'costco.com': 'Costco US', 'costco.ca': 'Costco CA',
+  'costco.com.au': 'Costco AU',
+  'tesco.com': 'Tesco', 'tesco.ie': 'Tesco IE',
+  'sainsburys.co.uk': 'Sainsbury\'s',
+  'ocado.com': 'Ocado',
+  'waitrose.com': 'Waitrose',
+  'asda.com': 'ASDA',
+  'morrisons.com': 'Morrisons',
+  'walmart.com': 'Walmart US', 'walmart.ca': 'Walmart CA',
+  'target.com': 'Target',
+  'woolworths.com.au': 'Woolworths',
+  'coles.com.au': 'Coles',
+  'rewe.de': 'REWE', 'dm.de': 'dm',
+  'carrefour.fr': 'Carrefour',
+  'bol.com': 'Bol.com',
+  'ah.nl': 'Albert Heijn',
+  'dunnesstoresgrocery.com': 'Dunnes',
+  'elcorteingles.es': 'El Corte Inglés',
+  'ica.se': 'ICA',
+  'rakuten.co.jp': 'Rakuten',
+  'iherb.com': 'iHerb',
+  'hollandandbarrett.com': 'Holland & Barrett',
+  'boots.com': 'Boots',
+  'superdrug.com': 'Superdrug',
+  'whsmith.co.uk': 'WHSmith',
+  'johnlewis.com': 'John Lewis',
+  'marks-and-spencer.com': 'M&S', 'marksandspencer.com': 'M&S',
+};
+
+function urlToStoreName(url) {
+  if (!url || !url.trim()) return '';
+  try {
+    const hostname = new URL(url).hostname.replace(/^www\./, '');
+    // Exact match first
+    if (DOMAIN_STORE_MAP[hostname]) return DOMAIN_STORE_MAP[hostname];
+    // Partial match — find any key that the hostname ends with
+    const match = Object.keys(DOMAIN_STORE_MAP).find(k => hostname.endsWith(k));
+    if (match) return DOMAIN_STORE_MAP[match];
+    // Fallback: capitalise the second-level domain
+    const parts = hostname.split('.');
+    const sld = parts.length >= 2 ? parts[parts.length - 2] : parts[0];
+    return sld.charAt(0).toUpperCase() + sld.slice(1);
+  } catch(e) { return ''; }
+}
+
+function autoFillStore() {
+  const url = document.getElementById('f-url').value.trim();
+  const storeField = document.getElementById('f-store');
+  // Only auto-fill if the field is empty or was previously auto-filled
+  if (!storeField.dataset.manual) {
+    const detected = urlToStoreName(url);
+    storeField.value = detected;
+    storeField.dataset.autoFilled = detected ? '1' : '';
+  }
+}
+
+
 function renderReport() {
   const threshold = settings.threshold;
   document.getElementById('report-date').textContent = 'Generated: ' + new Date().toLocaleDateString('en-GB',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
@@ -878,9 +962,14 @@ function openAddModal() {
   document.getElementById('f-qty').value = 1;
   document.getElementById('f-months').value = 1;
   document.getElementById('f-url').value = '';
+  const storeField = document.getElementById('f-store');
+  storeField.value = '';
+  storeField.dataset.manual = '';
+  storeField.dataset.autoFilled = '';
   document.getElementById('f-notes').value = '';
   document.getElementById('f-last-date').value = today();
   document.getElementById('f-last-qty').value = 1;
+  document.getElementById('f-started-using').value = '';
   document.getElementById('price-search-input').value = '';
   document.getElementById('price-links').innerHTML = '';
   openModal('item-modal');
@@ -898,10 +987,15 @@ function openEditModal(id) {
   document.getElementById('f-qty').value = item.qty||1;
   document.getElementById('f-months').value = item.months||1;
   document.getElementById('f-url').value = item.url||'';
+  const storeField = document.getElementById('f-store');
+  storeField.value = item.store || urlToStoreName(item.url||'');
+  storeField.dataset.manual = item.store ? '1' : '';
+  storeField.dataset.autoFilled = '';
   document.getElementById('f-notes').value = item.notes||'';
   const last = item.logs?.at(-1);
   document.getElementById('f-last-date').value = last?.date||today();
   document.getElementById('f-last-qty').value = last?.qty||1;
+  document.getElementById('f-started-using').value = item.startedUsing||'';
   document.getElementById('price-search-input').value = item.name;
   updatePriceLinks();
   openModal('item-modal');
@@ -915,7 +1009,8 @@ function openLogModal(id) {
   document.getElementById('log-date').value = today();
   document.getElementById('log-qty').value = item.qty||1;
   document.getElementById('log-price').value = '';
-  document.getElementById('log-store').value = '';
+  document.getElementById('log-store').value = item.store || urlToStoreName(item.url||'') || '';
+  document.getElementById('log-started-using').value = '';
 
   const histWrap = document.getElementById('log-history');
   const histEntries = document.getElementById('log-history-entries');
@@ -939,31 +1034,38 @@ function openLogModal(id) {
 function saveItem() {
   const name = document.getElementById('f-name').value.trim();
   if (!name) { alert('Please enter a name for this item.'); return; }
+  const startedUsing = document.getElementById('f-started-using').value || null;
+  const storeVal = document.getElementById('f-store').value.trim()
+    || urlToStoreName(document.getElementById('f-url').value.trim());
 
   if (editingId) {
     const item = items.find(i => i.id === editingId);
     if (item) {
-      item.name     = name;
-      item.category = document.getElementById('f-category').value;
-      item.cadence  = document.getElementById('f-cadence').value;
-      item.qty      = parseFloat(document.getElementById('f-qty').value)||1;
-      item.months   = parseFloat(document.getElementById('f-months').value)||1;
-      item.url      = document.getElementById('f-url').value.trim();
-      item.notes    = document.getElementById('f-notes').value.trim();
+      item.name         = name;
+      item.category     = document.getElementById('f-category').value;
+      item.cadence      = document.getElementById('f-cadence').value;
+      item.qty          = parseFloat(document.getElementById('f-qty').value)||1;
+      item.months       = parseFloat(document.getElementById('f-months').value)||1;
+      item.url          = document.getElementById('f-url').value.trim();
+      item.store        = storeVal;
+      item.notes        = document.getElementById('f-notes').value.trim();
+      item.startedUsing = startedUsing;
     }
   } else {
     const lastDate = document.getElementById('f-last-date').value;
     const lastQty  = parseFloat(document.getElementById('f-last-qty').value)||1;
     items.push({
-      id:       uid(),
+      id:           uid(),
       name,
-      category: document.getElementById('f-category').value,
-      cadence:  document.getElementById('f-cadence').value,
-      qty:      parseFloat(document.getElementById('f-qty').value)||1,
-      months:   parseFloat(document.getElementById('f-months').value)||1,
-      url:      document.getElementById('f-url').value.trim(),
-      notes:    document.getElementById('f-notes').value.trim(),
-      logs:     lastDate ? [{ id:uid(), date:lastDate, qty:lastQty, price:'', store:'' }] : []
+      category:     document.getElementById('f-category').value,
+      cadence:      document.getElementById('f-cadence').value,
+      qty:          parseFloat(document.getElementById('f-qty').value)||1,
+      months:       parseFloat(document.getElementById('f-months').value)||1,
+      url:          document.getElementById('f-url').value.trim(),
+      store:        storeVal,
+      notes:        document.getElementById('f-notes').value.trim(),
+      startedUsing,
+      logs:         lastDate ? [{ id:uid(), date:lastDate, qty:lastQty, price:'', store: storeVal }] : []
     });
   }
   saveData();
@@ -985,6 +1087,9 @@ function saveLog() {
     store: document.getElementById('log-store').value.trim()
   });
   item.logs.sort((a,b) => new Date(a.date) - new Date(b.date));
+  // Update startedUsing if a new date was provided
+  const su = document.getElementById('log-started-using').value;
+  if (su) item.startedUsing = su;
   saveData();
   closeModal('log-modal');
   renderAll();
