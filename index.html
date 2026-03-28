@@ -801,11 +801,29 @@ const STATUS_LABEL = { critical:'🔴 Critical', warn:'🟡 Low', ok:'🟢 Good'
 //  PERSISTENCE
 // ═══════════════════════════════════════════
 function loadData() {
-  try { const d = localStorage.getItem('stockroom_items'); if (d) items = JSON.parse(d); } catch(e){}
-  try { const s = localStorage.getItem('stockroom_settings'); if (s) settings = {...settings, ...JSON.parse(s)}; } catch(e){}
+  try {
+    const d = localStorage.getItem('stockroom_items');
+    if (d) {
+      const parsed = JSON.parse(d);
+      // Only assign if it's a non-empty array — never silently replace with garbage
+      if (Array.isArray(parsed)) items = parsed;
+    }
+  } catch(e) { console.warn('stockroom: could not load items from localStorage', e); }
+  try {
+    const s = localStorage.getItem('stockroom_settings');
+    if (s) {
+      const parsed = JSON.parse(s);
+      if (parsed && typeof parsed === 'object') settings = { ...settings, ...parsed };
+    }
+  } catch(e) { console.warn('stockroom: could not load settings from localStorage', e); }
 }
+
 function saveData() {
-  try { localStorage.setItem('stockroom_items', JSON.stringify(items)); } catch(e){}
+  try {
+    // Guard: never save a non-array
+    if (!Array.isArray(items)) { console.error('stockroom: items is not an array, aborting save'); return; }
+    localStorage.setItem('stockroom_items', JSON.stringify(items));
+  } catch(e) { console.warn('stockroom: could not save items', e); }
 }
 function saveSettings() {
   settings.threshold = parseInt(document.getElementById('setting-threshold').value);
@@ -967,6 +985,12 @@ function renderAll() {
 function renderGrid() {
   const threshold = settings.threshold;
   const grid = document.getElementById('items-grid');
+
+  // Defensive guard — should never happen but prevents blank screens
+  if (!Array.isArray(items)) {
+    console.error('stockroom: items is not an array in renderGrid', items);
+    items = [];
+  }
 
   let filtered = items.filter(item => {
     const s = calcStock(item);
@@ -2295,8 +2319,6 @@ async function syncNow() {
   if (!driveConnected || !accessToken) return;
   updateSyncPill('syncing');
   try {
-    const payload = JSON.stringify({ items, settings, lastSynced: new Date().toISOString() });
-
     if (!driveFileId) {
       // Search for existing file first
       const res = await fetch(
@@ -2306,16 +2328,28 @@ async function syncNow() {
       const data = await res.json();
       if (data.files && data.files.length) {
         driveFileId = data.files[0].id;
-        // Load remote data and merge
+        // Load remote and MERGE by id — keep any item in either set, prefer local if same id
         const fileRes = await fetch(
           `https://www.googleapis.com/drive/v3/files/${driveFileId}?alt=media`,
           { headers: { Authorization: 'Bearer ' + accessToken } }
         );
         const remote = await fileRes.json();
-        if (remote.items) items = remote.items;
-        if (remote.settings) settings = { ...settings, ...remote.settings };
-        saveData();
-        renderAll();
+        if (remote.items && Array.isArray(remote.items)) {
+          const localIds  = new Set(items.map(i => i.id));
+          const remoteIds = new Set(remote.items.map(i => i.id));
+          // Items only on remote get added; local items always win on conflict
+          const remoteOnly = remote.items.filter(i => !localIds.has(i.id));
+          items = [...items, ...remoteOnly];
+          // Merge settings without overwriting local customTags if they exist
+          if (remote.settings) {
+            const localTags = settings.customTags;
+            settings = { ...remote.settings, ...settings };
+            if (localTags && localTags.length) settings.customTags = localTags;
+          }
+          saveData();
+          try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e){}
+          renderAll();
+        }
       } else {
         // Create new file
         const meta = await fetch('https://www.googleapis.com/drive/v3/files', {
@@ -2329,7 +2363,9 @@ async function syncNow() {
       try { localStorage.setItem('stockroom_drive', JSON.stringify({ driveFileId, driveConnected })); } catch(e){}
     }
 
-    // Upload current data
+    // Build payload AFTER any merge above so it contains the full merged dataset
+    const payload = JSON.stringify({ items, settings, lastSynced: new Date().toISOString() });
+
     await fetch(
       `https://www.googleapis.com/upload/drive/v3/files/${driveFileId}?uploadType=media`,
       {
@@ -2339,7 +2375,6 @@ async function syncNow() {
       }
     );
     updateSyncPill('synced');
-    toast('Synced to Drive ✓');
   } catch(err) {
     console.error('Drive sync error:', err);
     updateSyncPill('error');
