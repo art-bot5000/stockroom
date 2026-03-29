@@ -252,11 +252,98 @@
   .store-picker-row label { font-size:14px; font-weight:600; cursor:pointer; flex:1; }
   .store-picker-row .store-item-count { font-size:11px; font-family:var(--mono); color:var(--muted); }
 
-  @media (max-width: 500px) {
-    .form-grid { grid-template-columns: 1fr; }
-    .wizard-features, .country-grid { grid-template-columns: 1fr; }
-    #tabs { overflow-x: auto; }
-    .shopping-item { grid-template-columns: 1fr; }
+  @media (max-width: 600px) {
+
+    /* ── HEADER ── */
+    #app-header { padding: 0 12px; gap: 8px; }
+    .logo { font-size: 11px; letter-spacing: 2px; }
+    .logo span { display: none; } /* hide "/ HOUSEHOLD TRACKER" on small screens */
+    #sync-label { display: none; } /* keep dot, hide text label */
+    .sync-pill { padding: 5px 7px; }
+
+    /* ── MAIN LAYOUT ── */
+    #main { padding: 16px 12px; }
+
+    /* ── TABS: scrollable, smaller ── */
+    #tabs { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; gap: 2px; padding: 3px; }
+    #tabs::-webkit-scrollbar { display: none; }
+    .tab { padding: 7px 13px; font-size: 12px; white-space: nowrap; }
+
+    /* ── CARDS: single column, slightly more padding ── */
+    #items-grid { grid-template-columns: 1fr; gap: 12px; }
+
+    /* ── CARD: bigger tap targets ── */
+    .btn-icon { padding: 8px 10px; font-size: 14px; }
+    .card-name { font-size: 15px; }
+    .card-star { font-size: 22px; } /* bigger stars = easier to tap */
+    .card-star-rating { gap: 4px; }
+    .log-btn { padding: 11px 16px; font-size: 13px; }
+
+    /* ── CARD META: wrap to 2×2 instead of 4 in a row ── */
+    .card-meta { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+    .meta-item strong { font-size: 12px; }
+
+    /* ── FILTER PANEL ── */
+    #filter-toggle-btn { width: 100%; justify-content: center; padding: 10px; font-size: 13px; }
+    #filter-panel { padding: 14px 12px; }
+    .filter-chip { padding: 7px 13px; font-size: 12px; }
+    .tag-filter-chip { padding: 7px 12px; font-size: 12px; }
+    .btn-add-tag { padding: 7px 12px; font-size: 12px; }
+
+    /* ── MODALS: full-width, pinned to bottom on mobile ── */
+    .modal-backdrop { align-items: flex-end; }
+    .modal {
+      width: 100%;
+      max-width: 100%;
+      max-height: 92vh;
+      border-radius: 20px 20px 0 0;
+      padding: 20px 16px 32px;
+    }
+
+    /* ── FORM: single column always ── */
+    .form-grid { grid-template-columns: 1fr; gap: 10px; }
+    .form-full { grid-column: 1; }
+    .field input, .field select, .field textarea { font-size: 16px; } /* prevent iOS zoom on focus */
+
+    /* ── WIZARD ── */
+    .wizard-box { padding: 28px 20px; border-radius: 16px; }
+    .wizard-features { grid-template-columns: 1fr 1fr; gap: 8px; }
+    .wizard-feature { padding: 10px; }
+    .wizard-feature h4 { font-size: 12px; }
+    .wizard-feature p { font-size: 11px; }
+    .country-grid { grid-template-columns: 1fr; max-height: 260px; }
+    .btn-xl { padding: 12px 20px; font-size: 14px; }
+
+    /* ── SHOPPING LIST ── */
+    .shopping-item { grid-template-columns: 1fr; gap: 8px; }
+    .shopping-checkbox { width: 24px; height: 24px; }
+    .shopping-link { padding: 8px 12px; font-size: 13px; }
+
+    /* ── STOCK COUNT / PRICE HISTORY MODALS ── */
+    #ph-chart svg { min-height: 140px; }
+    #ph-chart { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+    /* ── STOCK VIEW HEADER ── */
+    #view-stock > div:first-child { flex-wrap: wrap; gap: 6px; }
+
+    /* ── DAYS TOGGLE ── */
+    .days-toggle { padding: 5px 14px; }
+    .days-opt { font-size: 16px; }
+
+    /* ── SETTINGS ── */
+    .setting-row { flex-wrap: wrap; gap: 10px; }
+    .setting-row select { width: 100% !important; }
+
+    /* ── REPORT TABLE: horizontally scrollable ── */
+    .report-table { font-size: 12px; }
+    #report-content { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
+    /* ── STORE PICKER ROWS: bigger tap targets ── */
+    .store-picker-row { padding: 13px 14px; }
+    .store-picker-row input[type=checkbox] { width: 20px; height: 20px; }
+
+    /* ── PRICE HISTORY MODAL ── */
+    #ph-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   }
 </style>
 </head>
