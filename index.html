@@ -464,12 +464,15 @@
 
   <!-- REPORT VIEW -->
   <div class="view" id="view-report">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;flex-wrap:wrap;gap:10px">
       <div>
         <h2 style="font-size:18px;font-weight:700">Stock Report</h2>
         <div id="report-date" style="font-size:12px;color:var(--muted);font-family:var(--mono);margin-top:3px"></div>
       </div>
-      <button class="btn btn-ghost btn-sm" onclick="exportReport()">⬇ Export</button>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" onclick="emailReport()">📧 Email Report</button>
+        <button class="btn btn-ghost btn-sm" onclick="exportReport()">⬇ Export</button>
+      </div>
     </div>
     <div id="report-content"></div>
   </div>
@@ -517,6 +520,24 @@
     </div>
 
     <div class="settings-card">
+      <h3>📧 Email Reminders</h3>
+      <div class="setting-row">
+        <div class="setting-info"><h4>Your email address</h4><p>Where to send low-stock reminders</p></div>
+        <input type="email" id="setting-email" placeholder="you@example.com"
+          style="width:200px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-family:var(--sans);font-size:13px;outline:none"
+          onchange="saveSettings()">
+      </div>
+      <div class="setting-row">
+        <div class="setting-info">
+          <h4>Send reminder now</h4>
+          <p>Sends items running out within 30 days to your email</p>
+        </div>
+        <button class="btn btn-primary btn-sm" id="send-reminder-btn" onclick="sendReminderEmail()">📧 Send</button>
+      </div>
+      <div id="email-status" style="font-size:12px;margin-top:8px;display:none"></div>
+    </div>
+
+    <div class="settings-card">
       <h3>⚙️ Preferences</h3>
       <div class="setting-row">
         <div class="setting-info"><h4>Low stock warning</h4><p>Warn when stock drops below this %</p></div>
@@ -543,6 +564,70 @@
       <div class="setting-row">
         <div class="setting-info"><h4>Clear all data</h4><p>Remove all items and history</p></div>
         <button class="btn btn-danger btn-sm" onclick="clearAll()">Clear All</button>
+      </div>
+    </div>
+    <div class="settings-card">
+      <h3>📧 Email Reports</h3>
+      <div id="email-setup-needed" style="display:none">
+        <p style="font-size:13px;color:var(--muted);margin-bottom:14px">Get a scheduled stock report emailed to you. Requires the Stockroom email service to be configured — paste your Worker URL in the app's <code style="font-family:var(--mono);font-size:12px;background:var(--surface2);padding:2px 6px;border-radius:4px">WORKER_URL</code> constant first.</p>
+      </div>
+      <div id="email-not-registered" style="display:none">
+        <p style="font-size:13px;color:var(--muted);margin-bottom:14px">Receive a stock report by email on a schedule you choose. Your data stays in your own Google Drive — the email service only reads it to generate the report.</p>
+        <div class="form-grid" style="margin-bottom:14px">
+          <div class="field">
+            <label>Your email address</label>
+            <input type="email" id="email-input" placeholder="you@example.com">
+          </div>
+          <div class="field">
+            <label>Frequency</label>
+            <select id="email-frequency" onchange="updateEmailDayVisibility()">
+              <option value="daily">Daily</option>
+              <option value="weekly" selected>Weekly</option>
+              <option value="monthly">Monthly (1st of month)</option>
+            </select>
+          </div>
+          <div class="field" id="email-day-field">
+            <label>Day of week</label>
+            <select id="email-day">
+              <option value="monday">Monday</option>
+              <option value="tuesday">Tuesday</option>
+              <option value="wednesday">Wednesday</option>
+              <option value="thursday">Thursday</option>
+              <option value="friday">Friday</option>
+              <option value="saturday">Saturday</option>
+              <option value="sunday">Sunday</option>
+            </select>
+          </div>
+        </div>
+        <button class="btn btn-blue btn-sm" onclick="connectEmailReports()">☁️ Connect &amp; Enable Email Reports</button>
+      </div>
+      <div id="email-registered" style="display:none">
+        <div class="setting-row">
+          <div class="setting-info">
+            <h4 id="email-registered-label">Email reports active</h4>
+            <p id="email-registered-detail"></p>
+          </div>
+          <div style="display:flex;gap:8px;flex-wrap:wrap">
+            <button class="btn btn-ghost btn-sm" onclick="sendEmailNow()">Send Now</button>
+            <button class="btn btn-danger btn-sm" onclick="disableEmailReports()">Disable</button>
+          </div>
+        </div>
+        <div class="setting-row" style="border-top:none;padding-top:0">
+          <div class="setting-info"><h4>Frequency</h4></div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <select id="email-frequency-update" onchange="updateEmailSettings()" style="background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 28px 6px 8px;font-family:var(--sans);font-size:13px">
+              <option value="daily">Daily</option>
+              <option value="weekly">Weekly</option>
+              <option value="monthly">Monthly</option>
+            </select>
+            <select id="email-day-update" onchange="updateEmailSettings()" style="background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 28px 6px 8px;font-family:var(--sans);font-size:13px">
+              <option value="monday">Monday</option><option value="tuesday">Tuesday</option>
+              <option value="wednesday">Wednesday</option><option value="thursday">Thursday</option>
+              <option value="friday">Friday</option><option value="saturday">Saturday</option>
+              <option value="sunday">Sunday</option>
+            </select>
+          </div>
+        </div>
       </div>
     </div>
     <div class="settings-card">
@@ -837,9 +922,10 @@ function getStores(code) { return STORES_BY_COUNTRY[code] || STORES_BY_COUNTRY.O
 // ═══════════════════════════════════════════
 //  CONFIG
 // ═══════════════════════════════════════════
-const CLIENT_ID = '589308993147-rfj3kbaave6uhf3k1ojes3ph2l1pkd1m.apps.googleusercontent.com';
-const SCOPES = 'https://www.googleapis.com/auth/drive.file';
-const FILE_NAME = 'stockroom_data.json';
+const CLIENT_ID  = '589308993147-rfj3kbaave6uhf3k1ojes3ph2l1pkd1m.apps.googleusercontent.com';
+const SCOPES     = 'https://www.googleapis.com/auth/drive.file';
+const FILE_NAME  = 'stockroom_data.json';
+const WORKER_URL = 'https://stockroom-email.pete-92f.workers.dev';
 
 // ═══════════════════════════════════════════
 //  STATE
@@ -948,7 +1034,8 @@ function saveData() {
 }
 function saveSettings() {
   settings.threshold = parseInt(document.getElementById('setting-threshold').value);
-  settings.country = document.getElementById('setting-country').value;
+  settings.country   = document.getElementById('setting-country').value;
+  settings.email     = document.getElementById('setting-email').value.trim();
   // customTags preserved — managed inline via addTag/deleteTag
   try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e){}
   renderAll();
@@ -1120,8 +1207,62 @@ function starsHTML(rating) {
 }
 
 // ═══════════════════════════════════════════
-//  FILTER PANEL TOGGLE
+//  EMAIL REMINDERS
 // ═══════════════════════════════════════════
+async function sendReminderEmail() {
+  const email = document.getElementById('setting-email').value.trim();
+  if (!email) { toast('Enter your email address first'); return; }
+
+  const threshold = 30; // days
+  const dueItems = items
+    .map(item => { const s = calcStock(item); return s ? { item, daysLeft: s.daysLeft } : null; })
+    .filter(x => x && x.daysLeft <= threshold)
+    .sort((a, b) => a.daysLeft - b.daysLeft)
+    .map(({ item, daysLeft }) => ({
+      name:    item.name,
+      daysLeft,
+      store:   item.store || '',
+      url:     item.url   || '',
+      rating:  item.rating || null,
+    }));
+
+  if (!dueItems.length) {
+    toast('Nothing running out in the next 30 days — nothing to send!');
+    return;
+  }
+
+  const btn = document.getElementById('send-reminder-btn');
+  const statusEl = document.getElementById('email-status');
+  btn.textContent = '⏳ Sending…';
+  btn.disabled = true;
+  statusEl.style.display = 'none';
+
+  try {
+    const res = await fetch(`${WORKER_URL}/send-reminder`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ to: email, items: dueItems }),
+    });
+    const data = await res.json();
+    if (res.ok) {
+      statusEl.textContent = `✓ Reminder sent to ${email} (${dueItems.length} item${dueItems.length!==1?'s':''})`;
+      statusEl.style.color = 'var(--ok)';
+      statusEl.style.display = 'block';
+      toast('Reminder email sent ✓');
+    } else {
+      throw new Error(data.message || data.error || 'Unknown error');
+    }
+  } catch(err) {
+    statusEl.textContent = `✗ Failed: ${err.message}`;
+    statusEl.style.color = 'var(--danger)';
+    statusEl.style.display = 'block';
+  } finally {
+    btn.textContent = '📧 Send';
+    btn.disabled = false;
+  }
+}
+
+
 let filtersOpen = false;
 
 function toggleFilters() {
@@ -1171,7 +1312,9 @@ function renderAll() {
   renderGrid();
   // sync settings UI
   document.getElementById('setting-threshold').value = settings.threshold;
-  document.getElementById('setting-country').value = settings.country;
+  document.getElementById('setting-country').value   = settings.country;
+  const emailEl = document.getElementById('setting-email');
+  if (emailEl) emailEl.value = settings.email || '';
 }
 
 function renderGrid() {
@@ -1858,6 +2001,80 @@ function exportReport() {
   win.document.write(`<html><head><title>Stockroom Report</title><style>body{font-family:sans-serif;padding:20px;color:#111}table{width:100%;border-collapse:collapse}td,th{padding:10px;border-bottom:1px solid #eee;text-align:left}h3{margin:24px 0 10px}</style></head><body><h1>Stockroom Report</h1><p>${new Date().toLocaleDateString()}</p>${document.getElementById('report-content').innerHTML}</body></html>`);
   win.document.close(); win.print();
 }
+
+// ═══════════════════════════════════════════
+//  EMAIL REPORT (mailto: — Part A)
+// ═══════════════════════════════════════════
+function buildEmailBody() {
+  const threshold = settings.threshold;
+  const now = Date.now();
+  const dateStr = new Date().toLocaleDateString('en-GB', { weekday:'long', year:'numeric', month:'long', day:'numeric' });
+
+  // Classify items
+  const within7  = [];
+  const within30 = [];
+  const ok       = [];
+
+  items.forEach(item => {
+    const s = calcStock(item);
+    if (!s) return;
+    if (s.daysLeft <= 7)  within7.push({ item, ...s });
+    else if (s.daysLeft <= 30) within30.push({ item, ...s });
+    else ok.push({ item, ...s });
+  });
+
+  within7.sort((a,b)  => a.daysLeft - b.daysLeft);
+  within30.sort((a,b) => a.daysLeft - b.daysLeft);
+
+  const runOutDate = daysLeft => new Date(now + daysLeft * 86400000)
+    .toLocaleDateString('en-GB', { day:'numeric', month:'short' });
+
+  const stars = r => r ? '★'.repeat(r) + '☆'.repeat(5-r) : 'unrated';
+
+  const formatSection = (entries, label) => {
+    if (!entries.length) return `${label}\n(none)\n`;
+    return `${label}\n${'─'.repeat(40)}\n` +
+      entries.map(({item, daysLeft, pct}) => {
+        const lines = [
+          `• ${item.name}`,
+          `  Runs out: ${runOutDate(daysLeft)} (${daysLeft} days, ${pct}% remaining)`,
+        ];
+        if (item.store) lines.push(`  Store: ${item.store}`);
+        if (item.rating) lines.push(`  Rating: ${stars(item.rating)}`);
+        if (item.url)   lines.push(`  Buy: ${item.url}`);
+        return lines.join('\n');
+      }).join('\n\n') + '\n';
+  };
+
+  const body = [
+    `STOCKROOM REPORT — ${dateStr}`,
+    `${'═'.repeat(50)}`,
+    ``,
+    `🔴 RUNNING OUT THIS WEEK (within 7 days) — ${within7.length} item${within7.length!==1?'s':''}`,
+    formatSection(within7, ''),
+    `🟡 RUNNING OUT THIS MONTH (8–30 days) — ${within30.length} item${within30.length!==1?'s':''}`,
+    formatSection(within30, ''),
+    `🟢 WELL STOCKED — ${ok.length} item${ok.length!==1?'s':''}`,
+    ok.length ? ok.map(({item}) => `• ${item.name}`).join('\n') : '(none)',
+    ``,
+    `─────────────────────────────────────────`,
+    `Total items tracked: ${items.length}`,
+    `Generated by STOCKROOM`,
+  ].join('\n');
+
+  return body;
+}
+
+function emailReport() {
+  const body   = buildEmailBody();
+  const within7 = items.filter(i => { const s = calcStock(i); return s && s.daysLeft <= 7; }).length;
+  const within30 = items.filter(i => { const s = calcStock(i); return s && s.daysLeft > 7 && s.daysLeft <= 30; }).length;
+  const subject = `Stockroom Report — ${within7} urgent, ${within30} due soon`;
+  const mailto  = `mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  window.location.href = mailto;
+}
+
+
 
 function rateItem(id, val) {
   const item = items.find(i => i.id === id);
@@ -2684,6 +2901,174 @@ function connectDrive() {
   window.open(authUrl, 'gdrive_auth', 'width=500,height=620');
 }
 
+// ═══════════════════════════════════════════
+//  EMAIL REPORTS (Part C)
+// ═══════════════════════════════════════════
+
+function updateEmailDayVisibility() {
+  const freq = document.getElementById('email-frequency')?.value;
+  const dayField = document.getElementById('email-day-field');
+  if (dayField) dayField.style.display = freq === 'weekly' ? 'block' : 'none';
+}
+
+function renderEmailSettingsUI() {
+  const needsSetup  = document.getElementById('email-setup-needed');
+  const notReg      = document.getElementById('email-not-registered');
+  const regEl       = document.getElementById('email-registered');
+
+  if (!WORKER_URL) {
+    if (needsSetup) needsSetup.style.display = 'block';
+    if (notReg)     notReg.style.display     = 'none';
+    if (regEl)      regEl.style.display      = 'none';
+    return;
+  }
+  if (needsSetup) needsSetup.style.display = 'none';
+
+  if (emailRegistered) {
+    if (notReg) notReg.style.display = 'none';
+    if (regEl)  regEl.style.display  = 'block';
+    const label  = document.getElementById('email-registered-label');
+    const detail = document.getElementById('email-registered-detail');
+    if (label)  label.textContent  = `Sending to ${emailAddress}`;
+    if (detail) detail.textContent = `${capitalize(emailFrequency)}${emailFrequency==='weekly'?' on '+capitalize(emailDayOfWeek):''}`;
+    const freqSel = document.getElementById('email-frequency-update');
+    const daySel  = document.getElementById('email-day-update');
+    if (freqSel) freqSel.value = emailFrequency;
+    if (daySel)  daySel.value  = emailDayOfWeek;
+  } else {
+    if (notReg) notReg.style.display = 'block';
+    if (regEl)  regEl.style.display  = 'none';
+  }
+}
+
+function capitalize(s) { return s ? s.charAt(0).toUpperCase() + s.slice(1) : ''; }
+
+async function connectEmailReports() {
+  if (!WORKER_URL) { toast('Worker URL not configured'); return; }
+  const email = document.getElementById('email-input')?.value.trim();
+  if (!email || !email.includes('@')) { alert('Please enter a valid email address.'); return; }
+
+  const frequency  = document.getElementById('email-frequency')?.value || 'weekly';
+  const dayOfWeek  = document.getElementById('email-day')?.value       || 'monday';
+
+  // Build state param containing registration details
+  const state = btoa(JSON.stringify({ email, frequency, dayOfWeek, driveFileId }));
+
+  // Build OAuth URL pointing to Worker's /auth endpoint as redirect
+  const authUrl = 'https://accounts.google.com/o/oauth2/v2/auth'
+    + `?client_id=${CLIENT_ID}`
+    + `&redirect_uri=${encodeURIComponent(WORKER_URL + '/auth')}`
+    + `&response_type=code`
+    + `&scope=${encodeURIComponent('https://www.googleapis.com/auth/drive.file')}`
+    + `&access_type=offline`
+    + `&prompt=consent`
+    + `&state=${encodeURIComponent(state)}`;
+
+  // Store email locally so we can check status on return
+  try { localStorage.setItem('stockroom_pending_email', email); } catch(e){}
+  window.location.href = authUrl;
+}
+
+async function checkEmailRegistrationOnLoad() {
+  if (!WORKER_URL) return;
+
+  // Check if returning from OAuth
+  const params = new URLSearchParams(window.location.search);
+  const authResult = params.get('email_auth');
+  const returnEmail = params.get('email');
+  if (authResult) {
+    // Clean URL
+    history.replaceState(null, '', location.pathname);
+    if (authResult === 'success' && returnEmail) {
+      emailRegistered = true;
+      emailAddress    = returnEmail;
+      try { localStorage.setItem('stockroom_email', JSON.stringify({ emailRegistered, emailAddress, emailFrequency, emailDayOfWeek })); } catch(e){}
+      toast('Email reports enabled ✓');
+    } else {
+      const reason = params.get('reason') || 'unknown';
+      alert(`Email setup failed: ${reason}. Please try again.`);
+    }
+    renderEmailSettingsUI();
+    return;
+  }
+
+  // Restore from localStorage
+  try {
+    const saved = JSON.parse(localStorage.getItem('stockroom_email') || '{}');
+    if (saved.emailRegistered && saved.emailAddress) {
+      emailRegistered = saved.emailRegistered;
+      emailAddress    = saved.emailAddress;
+      emailFrequency  = saved.emailFrequency || 'weekly';
+      emailDayOfWeek  = saved.emailDayOfWeek || 'monday';
+      // Verify still registered with worker
+      const res = await fetch(`${WORKER_URL}/status?email=${encodeURIComponent(emailAddress)}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (!data.registered) {
+          emailRegistered = false;
+          localStorage.removeItem('stockroom_email');
+        } else {
+          emailFrequency = data.frequency || emailFrequency;
+          emailDayOfWeek = data.dayOfWeek || emailDayOfWeek;
+        }
+      }
+    }
+  } catch(e) {}
+
+  renderEmailSettingsUI();
+}
+
+async function updateEmailSettings() {
+  if (!WORKER_URL || !emailRegistered) return;
+  const frequency = document.getElementById('email-frequency-update')?.value || emailFrequency;
+  const dayOfWeek = document.getElementById('email-day-update')?.value       || emailDayOfWeek;
+  emailFrequency  = frequency;
+  emailDayOfWeek  = dayOfWeek;
+  try { localStorage.setItem('stockroom_email', JSON.stringify({ emailRegistered, emailAddress, emailFrequency, emailDayOfWeek })); } catch(e){}
+  try {
+    await fetch(`${WORKER_URL}/register`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: emailAddress, frequency, dayOfWeek, driveFileId }),
+    });
+    renderEmailSettingsUI();
+    toast('Email schedule updated ✓');
+  } catch(e) { toast('Could not update — check your connection'); }
+}
+
+async function disableEmailReports() {
+  if (!confirm(`Stop email reports to ${emailAddress}?`)) return;
+  try {
+    if (WORKER_URL) {
+      await fetch(`${WORKER_URL}/unregister`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: emailAddress }),
+      });
+    }
+  } catch(e) {}
+  emailRegistered = false;
+  emailAddress    = '';
+  try { localStorage.removeItem('stockroom_email'); } catch(e){}
+  renderEmailSettingsUI();
+  toast('Email reports disabled');
+}
+
+async function sendEmailNow() {
+  if (!WORKER_URL || !emailRegistered) return;
+  toast('Sending…');
+  try {
+    const res = await fetch(`${WORKER_URL}/send-now`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: emailAddress }),
+    });
+    const data = await res.json();
+    if (data.ok) toast('Report sent ✓ — check your inbox');
+    else toast('Send failed: ' + (data.error || 'unknown error'));
+  } catch(e) { toast('Could not reach email service'); }
+}
+
 function handleOAuthRedirect() {
   const hash = window.location.hash;
   if (!hash.includes('access_token')) return;
@@ -2861,6 +3246,8 @@ function init() {
   }
 
   updateDriveUI();
+  renderEmailSettingsUI();
+  checkEmailRegistrationOnLoad();
   renderAll();
 }
 
