@@ -1337,14 +1337,18 @@ function showAddTagInput(barId) {
   inp.maxLength = 20;
   addBtn.replaceWith(inp);
   inp.focus();
+
+  let committed = false;
   const commit = () => {
+    if (committed) return;
+    committed = true;
     const val = inp.value.trim();
     if (val) addTag(val);
     else { buildTagFilterBar(); buildShoppingTagFilterBarInline(); }
   };
   inp.addEventListener('keydown', e => {
     if (e.key === 'Enter') { e.preventDefault(); commit(); }
-    if (e.key === 'Escape') { buildTagFilterBar(); buildShoppingTagFilterBarInline(); }
+    if (e.key === 'Escape') { committed = true; buildTagFilterBar(); buildShoppingTagFilterBarInline(); }
   });
   inp.addEventListener('blur', commit);
 }
@@ -2605,66 +2609,87 @@ async function syncNow() {
   if (!driveConnected || !accessToken) return;
   updateSyncPill('syncing');
   try {
+    // ── Step 1: Find the Drive file if we don't have its ID yet ──
     if (!driveFileId) {
-      // Search for existing file first
       const res = await fetch(
-        `https://www.googleapis.com/drive/v3/files?q=name='${FILE_NAME}'+and+trashed=false&fields=files(id)`,
+        `https://www.googleapis.com/drive/v3/files?q=name='${FILE_NAME}'+and+trashed=false&fields=files(id,modifiedTime)`,
         { headers: { Authorization: 'Bearer ' + accessToken } }
       );
+      if (!res.ok) throw new Error('Drive search failed: ' + res.status);
       const data = await res.json();
       if (data.files && data.files.length) {
         driveFileId = data.files[0].id;
-        // Load remote and MERGE by id — keep any item in either set, prefer local if same id
-        const fileRes = await fetch(
-          `https://www.googleapis.com/drive/v3/files/${driveFileId}?alt=media`,
-          { headers: { Authorization: 'Bearer ' + accessToken } }
-        );
-        const remote = await fileRes.json();
-        if (remote.items && Array.isArray(remote.items)) {
-          const localIds  = new Set(items.map(i => i.id));
-          const remoteIds = new Set(remote.items.map(i => i.id));
-          // Items only on remote get added; local items always win on conflict
-          const remoteOnly = remote.items.filter(i => !localIds.has(i.id));
-          items = [...items, ...remoteOnly];
-          // Merge settings without overwriting local customTags if they exist
-          if (remote.settings) {
-            const localTags = settings.customTags;
-            settings = { ...remote.settings, ...settings };
-            if (localTags && localTags.length) settings.customTags = localTags;
-          }
-          saveData();
-          try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e){}
-          renderAll();
-        }
       } else {
-        // Create new file
+        // No file exists yet — create it and upload current data
         const meta = await fetch('https://www.googleapis.com/drive/v3/files', {
           method: 'POST',
           headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
           body: JSON.stringify({ name: FILE_NAME, mimeType: 'application/json' })
         });
+        if (!meta.ok) throw new Error('Drive create failed: ' + meta.status);
         const metaData = await meta.json();
         driveFileId = metaData.id;
+        try { localStorage.setItem('stockroom_drive', JSON.stringify({ driveFileId, driveConnected })); } catch(e){}
+        // Upload current data to the newly created file
+        await uploadToDrive(JSON.stringify({ items, settings, lastSynced: new Date().toISOString() }));
+        updateSyncPill('synced');
+        return;
       }
       try { localStorage.setItem('stockroom_drive', JSON.stringify({ driveFileId, driveConnected })); } catch(e){}
     }
 
-    // Build payload AFTER any merge above so it contains the full merged dataset
-    const payload = JSON.stringify({ items, settings, lastSynced: new Date().toISOString() });
-
-    await fetch(
-      `https://www.googleapis.com/upload/drive/v3/files/${driveFileId}?uploadType=media`,
-      {
-        method: 'PATCH',
-        headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
-        body: payload
-      }
+    // ── Step 2: Always load remote data and merge ──
+    const fileRes = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${driveFileId}?alt=media`,
+      { headers: { Authorization: 'Bearer ' + accessToken } }
     );
+    if (!fileRes.ok) throw new Error('Drive read failed: ' + fileRes.status);
+
+    let remote = null;
+    try { remote = await fileRes.json(); } catch(e) {}
+
+    if (remote && Array.isArray(remote.items)) {
+      const localIds = new Set(items.map(i => i.id));
+      // Remote items not in local → add them
+      const remoteOnly = remote.items.filter(i => !localIds.has(i.id));
+      if (remoteOnly.length > 0) {
+        items = [...items, ...remoteOnly];
+        saveData();
+      }
+      // Merge settings: local wins except for fields missing locally
+      if (remote.settings) {
+        const localTags = settings.customTags;
+        settings = { ...remote.settings, ...settings };
+        // Always prefer whichever customTags array has more defined tags
+        const remoteTags = remote.settings.customTags || [];
+        const localDefined  = (localTags||[]).filter(t=>t&&t.trim()).length;
+        const remoteDefined = remoteTags.filter(t=>t&&t.trim()).length;
+        settings.customTags = localDefined >= remoteDefined ? (localTags||[]) : remoteTags;
+        try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e){}
+      }
+      if (remoteOnly.length > 0) renderAll();
+    }
+
+    // ── Step 3: Upload merged data back to Drive ──
+    await uploadToDrive(JSON.stringify({ items, settings, lastSynced: new Date().toISOString() }));
     updateSyncPill('synced');
+
   } catch(err) {
     console.error('Drive sync error:', err);
     updateSyncPill('error');
   }
+}
+
+async function uploadToDrive(payload) {
+  const res = await fetch(
+    `https://www.googleapis.com/upload/drive/v3/files/${driveFileId}?uploadType=media`,
+    {
+      method: 'PATCH',
+      headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
+      body: payload
+    }
+  );
+  if (!res.ok) throw new Error('Drive upload failed: ' + res.status);
 }
 
 function signOutDrive() {
