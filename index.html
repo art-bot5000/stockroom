@@ -169,11 +169,9 @@
 
   /* ── STAR RATING ── */
   .star-rating { display: flex; gap: 4px; }
-  .star { font-size: 20px; cursor: pointer; color: var(--border); transition: color 0.1s; line-height: 1; }
+  .star { font-size: 20px; cursor: pointer; color: var(--border); transition: color 0.1s; line-height: 1; user-select: none; }
   .star.on { color: #e8a838; }
-  .star:hover { color: #e8a838; }
-  .star-rating:hover .star { color: #e8a838; }
-  .star-rating:hover .star ~ .star { color: var(--border); }
+  .star.preview { color: #e8a838; }
   .card-stars { font-size: 13px; letter-spacing: 1px; }
   .card-star-rating { display: flex; gap: 2px; }
   .card-star { font-size: 17px; cursor: pointer; color: var(--border); transition: color 0.1s; line-height: 1; user-select: none; }
@@ -204,6 +202,13 @@
   .tag-input-row input { flex:1; background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:7px 10px; color:var(--text); font-family:var(--sans); font-size:13px; outline:none; }
   .tag-input-row input:focus { border-color:var(--accent); }
   .tag-swatch { width:14px; height:14px; border-radius:50%; flex-shrink:0; }
+  .tag-filter-chip { display:inline-flex; align-items:center; gap:5px; font-size:12px; font-weight:600; padding:5px 10px; border-radius:99px; border:1px solid var(--border); background:transparent; color:var(--muted); cursor:pointer; transition:all 0.15s; font-family:var(--sans); }
+  .tag-filter-chip.active { background:var(--surface2); color:var(--text); border-color:var(--muted); }
+  .tag-filter-chip .tag-x { font-size:11px; opacity:0.5; margin-left:2px; line-height:1; }
+  .tag-filter-chip .tag-x:hover { opacity:1; color:var(--danger); }
+  .btn-add-tag { font-size:12px; font-weight:600; padding:5px 10px; border-radius:99px; border:1px dashed var(--border); background:transparent; color:var(--muted); cursor:pointer; font-family:var(--sans); transition:all 0.15s; display:inline-flex; align-items:center; gap:4px; }
+  .btn-add-tag:hover { border-color:var(--accent); color:var(--accent); }
+  .tag-inline-input { font-size:12px; font-weight:600; padding:4px 10px; border-radius:99px; border:1px solid var(--accent); background:var(--bg); color:var(--text); font-family:var(--sans); outline:none; width:110px; }
 
 
   .card-image { width:100%;height:120px;object-fit:contain;border-radius:8px;background:var(--surface2);margin-bottom:12px;display:block; }
@@ -323,30 +328,42 @@
       <span id="item-count" style="font-size:12px;color:var(--muted)">0 items</span>
     </div>
     <div style="margin-bottom:18px">
-      <div id="filter-bar" style="display:flex;gap:8px;margin-bottom:8px;flex-wrap:wrap">
-        <button class="filter-chip active" onclick="setFilter('status','all',this)">All</button>
-        <button class="filter-chip" onclick="setFilter('status','critical',this)">🔴 Critical</button>
-        <button class="filter-chip" onclick="setFilter('status','warn',this)">🟡 Low</button>
-        <button class="filter-chip" onclick="setFilter('status','ok',this)">🟢 Good</button>
-        <button class="filter-chip" onclick="setFilter('cadence','monthly',this)">🗓️ Monthly</button>
-        <button class="filter-chip" onclick="setFilter('cadence','bulk',this)">📦 Bulk</button>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" id="filter-toggle-btn" onclick="toggleFilters()" style="display:flex;align-items:center;gap:6px">
+          <span id="filter-toggle-icon">▸</span> Filters
+          <span id="filter-active-badge" style="display:none;background:var(--accent);color:#111;font-size:10px;font-weight:700;padding:1px 6px;border-radius:99px;font-family:var(--mono)"></span>
+        </button>
       </div>
-      <div id="store-filter-bar" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <span style="font-size:11px;color:var(--muted);font-family:var(--mono);letter-spacing:0.5px;text-transform:uppercase">Store:</span>
-        <button class="filter-chip active" onclick="setStoreFilter('all',this)">All Stores</button>
+
+      <div id="filter-panel" style="display:none;flex-direction:column;gap:8px;margin-bottom:10px;padding:12px;background:var(--surface);border:1px solid var(--border);border-radius:10px">
+        <div id="filter-bar" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <span style="font-size:11px;color:var(--muted);font-family:var(--mono);letter-spacing:0.5px;text-transform:uppercase;flex-shrink:0">Status:</span>
+          <button class="filter-chip active" onclick="setFilter('status','all',this)">All</button>
+          <button class="filter-chip" onclick="setFilter('status','critical',this)">🔴 Critical</button>
+          <button class="filter-chip" onclick="setFilter('status','warn',this)">🟡 Low</button>
+          <button class="filter-chip" onclick="setFilter('status','ok',this)">🟢 Good</button>
+          <button class="filter-chip" onclick="setFilter('cadence','monthly',this)">🗓️ Monthly</button>
+          <button class="filter-chip" onclick="setFilter('cadence','bulk',this)">📦 Bulk</button>
+        </div>
+        <div id="store-filter-bar" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <span style="font-size:11px;color:var(--muted);font-family:var(--mono);letter-spacing:0.5px;text-transform:uppercase;flex-shrink:0">Store:</span>
+          <button class="filter-chip active" onclick="setStoreFilter('all',this)">All Stores</button>
+        </div>
+        <div id="rating-filter-bar" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <span style="font-size:11px;color:var(--muted);font-family:var(--mono);letter-spacing:0.5px;text-transform:uppercase;flex-shrink:0">Rating:</span>
+          <button class="filter-chip active" onclick="setRatingFilter(0,this)">All</button>
+          <button class="filter-chip" onclick="setRatingFilter(1,this)">★ 1</button>
+          <button class="filter-chip" onclick="setRatingFilter(2,this)">★★ 2</button>
+          <button class="filter-chip" onclick="setRatingFilter(3,this)">★★★ 3</button>
+          <button class="filter-chip" onclick="setRatingFilter(4,this)">★★★★ 4</button>
+          <button class="filter-chip" onclick="setRatingFilter(5,this)">★★★★★ 5</button>
+          <button class="filter-chip" onclick="setRatingFilter(-1,this)">⚠️ Not rated</button>
+        </div>
+        <button class="btn btn-ghost btn-sm" style="align-self:flex-start;font-size:11px" onclick="resetAllFilters()">↺ Reset filters</button>
       </div>
-      <div id="rating-filter-bar" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">
-        <span style="font-size:11px;color:var(--muted);font-family:var(--mono);letter-spacing:0.5px;text-transform:uppercase">Rating:</span>
-        <button class="filter-chip active" onclick="setRatingFilter(0,this)">All</button>
-        <button class="filter-chip" onclick="setRatingFilter(1,this)">★ 1</button>
-        <button class="filter-chip" onclick="setRatingFilter(2,this)">★★ 2</button>
-        <button class="filter-chip" onclick="setRatingFilter(3,this)">★★★ 3</button>
-        <button class="filter-chip" onclick="setRatingFilter(4,this)">★★★★ 4</button>
-        <button class="filter-chip" onclick="setRatingFilter(5,this)">★★★★★ 5</button>
-        <button class="filter-chip" onclick="setRatingFilter(-1,this)">⚠️ Not rated</button>
-      </div>
-      <div id="tag-filter-bar" style="display:none;gap:8px;flex-wrap:wrap;align-items:center;margin-top:8px">
-        <span style="font-size:11px;color:var(--muted);font-family:var(--mono);letter-spacing:0.5px;text-transform:uppercase">Tags:</span>
+
+      <div id="tag-filter-bar" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <span style="font-size:11px;color:var(--muted);font-family:var(--mono);letter-spacing:0.5px;text-transform:uppercase;flex-shrink:0">Tags:</span>
       </div>
     </div>
     <div id="items-grid"></div>
@@ -384,7 +401,10 @@
         <button class="btn btn-primary btn-sm" onclick="openStorePickerModal()">⚙ Stores</button>
       </div>
     </div>
-    <div id="shopping-store-pills" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:20px"></div>
+    <div id="shopping-store-pills" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"></div>
+    <div id="shopping-tag-filter-bar" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
+      <span style="font-size:11px;color:var(--muted);font-family:var(--mono);letter-spacing:0.5px;text-transform:uppercase">Tags:</span>
+    </div>
     <div id="shopping-content"></div>
   </div>
 
@@ -417,12 +437,6 @@
       </div>
     </div>
     <div class="settings-card">
-      <h3>🏷️ Custom Tags</h3>
-      <p style="font-size:12px;color:var(--muted);margin-bottom:14px">Define up to 5 tags to organise your items. Toggle them on each card in the stock view.</p>
-      <div id="tag-settings-rows"></div>
-      <button class="btn btn-ghost btn-sm" style="margin-top:12px" onclick="saveTagSettings()">Save Tags</button>
-    </div>
-    <div class="settings-card">
       <h3>📦 Data</h3>
       <div class="setting-row">
         <div class="setting-info"><h4>Export data (JSON)</h4><p>Download all items as a backup file</p></div>
@@ -445,6 +459,19 @@
         Stock estimates are calculated from your purchase history, quantity per purchase, and months-of-supply settings.<br>
         Data syncs to your Google Drive account. Export regularly as an additional backup.
       </p>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ PRICE HISTORY MODAL ═══ -->
+<div class="modal-backdrop" id="price-history-modal">
+  <div class="modal" style="max-width:500px">
+    <h2 id="ph-title">💰 Price History</h2>
+    <p class="subtitle" id="ph-subtitle"></p>
+    <div id="ph-chart" style="margin:16px 0"></div>
+    <div id="ph-table"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('price-history-modal')">Close</button>
     </div>
   </div>
 </div>
@@ -539,11 +566,11 @@
         <label>Product Rating <span style="font-weight:400;color:var(--muted)">(helps you remember whether to reorder this brand)</span></label>
         <div style="display:flex;align-items:center;gap:14px;margin-top:4px">
           <div class="star-rating" id="f-star-rating">
-            <span class="star" data-val="1" onclick="setRating(1)">★</span>
-            <span class="star" data-val="2" onclick="setRating(2)">★</span>
-            <span class="star" data-val="3" onclick="setRating(3)">★</span>
-            <span class="star" data-val="4" onclick="setRating(4)">★</span>
-            <span class="star" data-val="5" onclick="setRating(5)">★</span>
+            <span class="star" data-val="1" onclick="setRating(1)" onmouseover="previewModalStars(1)" onmouseout="resetModalStars()">★</span>
+            <span class="star" data-val="2" onclick="setRating(2)" onmouseover="previewModalStars(2)" onmouseout="resetModalStars()">★</span>
+            <span class="star" data-val="3" onclick="setRating(3)" onmouseover="previewModalStars(3)" onmouseout="resetModalStars()">★</span>
+            <span class="star" data-val="4" onclick="setRating(4)" onmouseover="previewModalStars(4)" onmouseout="resetModalStars()">★</span>
+            <span class="star" data-val="5" onclick="setRating(5)" onmouseover="previewModalStars(5)" onmouseout="resetModalStars()">★</span>
           </div>
           <span id="f-rating-label" style="font-size:12px;color:var(--muted)">Not rated</span>
           <button type="button" onclick="setRating(0)" style="font-size:11px;color:var(--muted);background:none;border:none;cursor:pointer;text-decoration:underline;padding:0">Clear</button>
@@ -556,8 +583,9 @@
       <div class="form-grid">
         <div class="field"><label>Date purchased</label><input type="date" id="f-last-date"></div>
         <div class="field"><label>Qty purchased</label><input type="number" id="f-last-qty" min="0.1" step="0.1" value="1"></div>
+        <div class="field"><label>Price paid</label><input type="text" id="f-last-price" placeholder="e.g. £12.99"></div>
         <div class="field"><label>Started using</label><input type="date" id="f-started-using"></div>
-        <div class="field" style="display:flex;align-items:flex-end;padding-bottom:2px">
+        <div class="field form-full" style="padding-top:2px">
           <p style="font-size:12px;color:var(--muted);line-height:1.5">If bought before opening, set the date you actually started using it — this gives a more accurate stock estimate.</p>
         </div>
       </div>
@@ -828,7 +856,7 @@ function saveData() {
 function saveSettings() {
   settings.threshold = parseInt(document.getElementById('setting-threshold').value);
   settings.country = document.getElementById('setting-country').value;
-  // customTags preserved — only updated via saveTagSettings()
+  // customTags preserved — managed inline via addTag/deleteTag
   try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e){}
   renderAll();
 }
@@ -911,6 +939,7 @@ function setFilter(type, value, btn) {
   }
   if (btn) btn.classList.add('active');
   if (activeCadence === 'all' && type === 'cadence') btn.classList.remove('active');
+  updateFilterBadge();
   renderGrid();
 }
 
@@ -918,6 +947,7 @@ function setStoreFilter(store, btn) {
   activeStore = store;
   document.querySelectorAll('#store-filter-bar .filter-chip').forEach(c => c.classList.remove('active'));
   btn.classList.add('active');
+  updateFilterBadge();
   renderGrid();
 }
 
@@ -943,11 +973,37 @@ function setRatingFilter(rating, btn) {
   activeRating = rating;
   document.querySelectorAll('#rating-filter-bar .filter-chip').forEach(c => c.classList.remove('active'));
   btn.classList.add('active');
+  updateFilterBadge();
   renderGrid();
 }
 
 // ── Modal star rating ──
 const RATING_LABELS = { 0:'Not rated', 1:'Poor — look for alternatives', 2:'Below average', 3:'Acceptable', 4:'Good', 5:'Excellent — keep buying this' };
+
+function previewModalStars(val) {
+  document.querySelectorAll('#f-star-rating .star').forEach(s => {
+    const n = parseInt(s.dataset.val);
+    s.classList.toggle('preview', n <= val);
+    s.classList.remove('on');
+  });
+  const label = document.getElementById('f-rating-label');
+  if (label) {
+    label.textContent = RATING_LABELS[val] || '';
+    label.style.color = val <= 2 ? 'var(--danger)' : val >= 4 ? 'var(--ok)' : 'var(--muted)';
+  }
+}
+
+function resetModalStars() {
+  document.querySelectorAll('#f-star-rating .star').forEach(s => {
+    s.classList.remove('preview');
+    s.classList.toggle('on', parseInt(s.dataset.val) <= currentRating);
+  });
+  const label = document.getElementById('f-rating-label');
+  if (label) {
+    label.textContent = RATING_LABELS[currentRating] || 'Not rated';
+    label.style.color = !currentRating ? 'var(--muted)' : currentRating <= 2 ? 'var(--danger)' : currentRating >= 4 ? 'var(--ok)' : 'var(--muted)';
+  }
+}
 
 function setRating(val) {
   currentRating = val;
@@ -956,11 +1012,12 @@ function setRating(val) {
 
 function renderStars() {
   document.querySelectorAll('#f-star-rating .star').forEach(s => {
+    s.classList.remove('preview');
     s.classList.toggle('on', parseInt(s.dataset.val) <= currentRating);
   });
   const label = document.getElementById('f-rating-label');
   label.textContent = RATING_LABELS[currentRating] || 'Not rated';
-  label.style.color = currentRating === 1 ? 'var(--danger)' : currentRating === 2 ? 'var(--warn)' : currentRating >= 4 ? 'var(--ok)' : 'var(--muted)';
+  label.style.color = !currentRating ? 'var(--muted)' : currentRating <= 2 ? 'var(--danger)' : currentRating >= 4 ? 'var(--ok)' : 'var(--muted)';
 }
 
 function starsHTML(rating) {
@@ -970,12 +1027,54 @@ function starsHTML(rating) {
 }
 
 // ═══════════════════════════════════════════
-//  RENDER DASHBOARD
+//  FILTER PANEL TOGGLE
 // ═══════════════════════════════════════════
+let filtersOpen = false;
+
+function toggleFilters() {
+  filtersOpen = !filtersOpen;
+  const panel = document.getElementById('filter-panel');
+  const icon  = document.getElementById('filter-toggle-icon');
+  panel.style.display = filtersOpen ? 'flex' : 'none';
+  icon.textContent = filtersOpen ? '▾' : '▸';
+}
+
+function updateFilterBadge() {
+  const badge = document.getElementById('filter-active-badge');
+  if (!badge) return;
+  const active = [
+    activeFilter !== 'all',
+    activeCadence !== 'all',
+    activeStore !== 'all',
+    activeRating !== 0,
+  ].filter(Boolean).length;
+  if (active > 0) {
+    badge.textContent = active;
+    badge.style.display = 'inline';
+  } else {
+    badge.style.display = 'none';
+  }
+}
+
+function resetAllFilters() {
+  activeFilter  = 'all';
+  activeCadence = 'all';
+  activeStore   = 'all';
+  activeRating  = 0;
+  // Reset chip visual states
+  document.querySelectorAll('#filter-bar .filter-chip').forEach((c,i) => c.classList.toggle('active', i === 0));
+  document.querySelectorAll('#store-filter-bar .filter-chip').forEach((c,i) => c.classList.toggle('active', i === 0));
+  document.querySelectorAll('#rating-filter-bar .filter-chip').forEach((c,i) => c.classList.toggle('active', i === 0));
+  updateFilterBadge();
+  renderGrid();
+}
+
+
 function renderAll() {
   document.getElementById('item-count').textContent = items.length + ' item' + (items.length!==1?'s':'');
   buildStoreFilterBar();
   buildTagFilterBar();
+  buildShoppingTagFilterBarInline();
   renderGrid();
   // sync settings UI
   document.getElementById('setting-threshold').value = settings.threshold;
@@ -1071,6 +1170,7 @@ function cardHTML(item, threshold) {
       </div>
       <div class="card-btns">
         <button class="btn-icon" title="Update stock count" onclick="openStockCountModal('${item.id}')">🔢</button>
+        <button class="btn-icon" title="Price history" onclick="openPriceHistoryModal('${item.id}')" ${getPriceHistory(item).length < 2 ? 'style="opacity:0.35;cursor:default"' : ''}>💰</button>
         <button class="btn-icon" title="Edit" onclick="openEditModal('${item.id}')">✏️</button>
         <button class="btn-icon" title="Delete" onclick="deleteItem('${item.id}')">🗑️</button>
       </div>
@@ -1173,56 +1273,120 @@ function toggleItemTag(itemId, tagIndex) {
   if (driveConnected) setTimeout(syncNow, 400);
 }
 
-function buildTagSettingsRows() {
+function buildTagFilterBar() {
+  const bar = document.getElementById('tag-filter-bar');
+  if (!bar) return;
   const tags = getCustomTags();
-  const rows = document.getElementById('tag-settings-rows');
-  if (!rows) return;
-  rows.innerHTML = tags.map((tag, i) => {
+  const defined = tags.map((t,i) => ({t,i})).filter(({t}) => t && t.trim());
+  const hasRoom = defined.length < 5;
+
+  const label = `<span style="font-size:11px;color:var(--muted);font-family:var(--mono);letter-spacing:0.5px;text-transform:uppercase;flex-shrink:0">Tags:</span>`;
+  const allChip = defined.length
+    ? `<button class="tag-filter-chip${activeTagFilter===null?' active':''}" onclick="setTagFilter(null,this)">All</button>`
+    : '';
+  const chips = defined.map(({t,i}) => {
     const c = TAG_COLORS[i];
-    return `<div class="tag-input-row">
-      <div class="tag-swatch" style="background:${c.text}"></div>
-      <input type="text" id="tag-input-${i}" value="${esc(tag)}" maxlength="20" placeholder="Tag ${i+1} name (leave blank to hide)">
-    </div>`;
+    const isActive = activeTagFilter === i;
+    return `<span class="tag-filter-chip${isActive?' active':''}"
+      style="${isActive?`background:${c.bg};border-color:${c.border};color:${c.text}`:''}"
+      onclick="setTagFilter(${i},this)">
+      ${esc(t)}
+      <span class="tag-x" onclick="event.stopPropagation();deleteTag(${i})" title="Remove tag">×</span>
+    </span>`;
   }).join('');
+  const addBtn = hasRoom
+    ? `<button class="btn-add-tag" onclick="showAddTagInput('tag-filter-bar')">+ Tag</button>`
+    : '';
+  bar.innerHTML = label + allChip + chips + addBtn;
 }
 
-function saveTagSettings() {
-  const tags = [0,1,2,3,4].map(i => {
-    const el = document.getElementById('tag-input-'+i);
-    return el ? el.value.trim() : '';
+function buildShoppingTagFilterBarInline() {
+  const bar = document.getElementById('shopping-tag-filter-bar');
+  if (!bar) return;
+  const tags = getCustomTags();
+  const defined = tags.map((t,i) => ({t,i})).filter(({t}) => t && t.trim());
+  const hasRoom = defined.length < 5;
+
+  const label = `<span style="font-size:11px;color:var(--muted);font-family:var(--mono);letter-spacing:0.5px;text-transform:uppercase;flex-shrink:0">Tags:</span>`;
+  const allChip = defined.length
+    ? `<button class="tag-filter-chip${shoppingTagFilter===null?' active':''}" onclick="setShoppingTagFilter(null,this)">All</button>`
+    : '';
+  const chips = defined.map(({t,i}) => {
+    const c = TAG_COLORS[i];
+    const isActive = shoppingTagFilter === i;
+    return `<span class="tag-filter-chip${isActive?' active':''}"
+      style="${isActive?`background:${c.bg};border-color:${c.border};color:${c.text}`:''}"
+      onclick="setShoppingTagFilter(${i},this)">
+      ${esc(t)}
+    </span>`;
+  }).join('');
+  const addBtn = hasRoom
+    ? `<button class="btn-add-tag" onclick="showAddTagInput('shopping-tag-filter-bar')">+ Tag</button>`
+    : '';
+  bar.innerHTML = label + allChip + chips + addBtn;
+}
+
+function showAddTagInput(barId) {
+  const bar = document.getElementById(barId);
+  if (!bar) return;
+  const addBtn = bar.querySelector('.btn-add-tag');
+  if (!addBtn) return;
+  const inp = document.createElement('input');
+  inp.className = 'tag-inline-input';
+  inp.placeholder = 'Tag name…';
+  inp.maxLength = 20;
+  addBtn.replaceWith(inp);
+  inp.focus();
+  const commit = () => {
+    const val = inp.value.trim();
+    if (val) addTag(val);
+    else { buildTagFilterBar(); buildShoppingTagFilterBarInline(); }
+  };
+  inp.addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.preventDefault(); commit(); }
+    if (e.key === 'Escape') { buildTagFilterBar(); buildShoppingTagFilterBarInline(); }
   });
+  inp.addEventListener('blur', commit);
+}
+
+function addTag(name) {
+  const tags = getCustomTags();
+  const firstEmpty = tags.findIndex(t => !t || !t.trim());
+  if (firstEmpty === -1) return;
+  tags[firstEmpty] = name;
   settings.customTags = tags;
-  try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e) {}
+  try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e){}
   buildTagFilterBar();
-  renderAll();
-  toast('Tags saved ✓');
+  buildShoppingTagFilterBarInline();
+  renderGrid();
   if (driveConnected) setTimeout(syncNow, 400);
 }
 
-function buildTagFilterBar() {
+function deleteTag(index) {
+  if (!confirm(`Remove tag "${getCustomTags()[index]}"? Items will lose this tag.`)) return;
   const tags = getCustomTags();
-  const bar = document.getElementById('tag-filter-bar');
-  if (!bar) return;
-  const defined = tags.map((t,i) => ({t,i})).filter(({t}) => t && t.trim());
-  if (!defined.length) { bar.style.display = 'none'; return; }
-
-  bar.style.display = 'flex';
-  const label = `<span style="font-size:11px;color:var(--muted);font-family:var(--mono);letter-spacing:0.5px;text-transform:uppercase">Tags:</span>`;
-  const allChip = `<button class="filter-chip${activeTagFilter===null?' active':''}" onclick="setTagFilter(null,this)">All</button>`;
-  const chips = defined.map(({t,i}) => {
-    const c = TAG_COLORS[i];
-    return `<button class="filter-chip${activeTagFilter===i?' active':''}"
-      style="${activeTagFilter===i?`background:${c.bg};border-color:${c.border};color:${c.text}`:''};"
-      onclick="setTagFilter(${i},this)">${esc(t)}</button>`;
-  }).join('');
-  bar.innerHTML = label + allChip + chips;
+  tags[index] = '';
+  settings.customTags = tags;
+  items.forEach(item => {
+    if (item.tags) item.tags = item.tags.filter(t => t !== index);
+  });
+  if (activeTagFilter === index) activeTagFilter = null;
+  if (shoppingTagFilter === index) shoppingTagFilter = null;
+  try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e){}
+  saveData();
+  buildTagFilterBar();
+  buildShoppingTagFilterBarInline();
+  renderGrid();
+  if (driveConnected) setTimeout(syncNow, 400);
 }
 
 function setTagFilter(index, btn) {
   activeTagFilter = index;
-  buildTagFilterBar(); // rebuilds with correct active state
+  buildTagFilterBar();
   renderGrid();
 }
+
+function buildTagSettingsRows() {} // no-op — tags now managed inline
 
 
 
@@ -1649,8 +1813,111 @@ function resetCardStars(id) {
 
 
 // ═══════════════════════════════════════════
-//  STOCK COUNT
+//  PRICE HISTORY MODAL
 // ═══════════════════════════════════════════
+function openPriceHistoryModal(id) {
+  const item = items.find(i => i.id === id);
+  if (!item) return;
+  const history = getPriceHistory(item);
+  if (!history.length) return;
+
+  document.getElementById('ph-title').textContent = '💰 ' + item.name;
+
+  const prices  = history.map(h => h.price);
+  const minP    = Math.min(...prices);
+  const maxP    = Math.max(...prices);
+  const avgP    = prices.reduce((a,b)=>a+b,0) / prices.length;
+  const trend   = getPriceTrend(item);
+  const lastP   = prices[prices.length-1];
+  const currency = (history.at(-1)?.raw||'').replace(/[\d.,\s]/g,'').trim() || '£';
+
+  // Subtitle: trend summary
+  let trendDesc = 'Stable price';
+  if (trend) {
+    if (trend.dir === 'up')   trendDesc = `↑ Up ${trend.pct}% vs last purchase`;
+    if (trend.dir === 'down') trendDesc = `↓ Down ${trend.pct}% vs last purchase`;
+  }
+  document.getElementById('ph-subtitle').textContent = `${history.length} purchase${history.length!==1?'s':''} · ${trendDesc}`;
+
+  // ── SVG bar chart ──
+  const W = 440, H = 160, PAD = { t:16, r:16, b:36, l:48 };
+  const chartW = W - PAD.l - PAD.r;
+  const chartH = H - PAD.t - PAD.b;
+  const range  = maxP - minP || 1;
+  const barW   = Math.min(40, (chartW / history.length) - 6);
+
+  const bars = history.map((h, i) => {
+    const x    = PAD.l + (i / history.length) * chartW + (chartW / history.length - barW) / 2;
+    const barH = ((h.price - minP) / range) * (chartH * 0.75) + chartH * 0.15;
+    const y    = PAD.t + chartH - barH;
+    const isLow  = h.price === minP && prices.length > 1;
+    const isHigh = h.price === maxP && prices.length > 1 && minP !== maxP;
+    const isLast = i === history.length - 1;
+    const fill   = isLow ? '#4cbb8a' : isHigh ? '#e85050' : isLast ? '#e8a838' : '#2e3350';
+    const label  = `${currency}${h.price.toFixed(2)}`;
+    const dateLabel = new Date(h.date+'T12:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short'});
+    return `
+      <rect x="${x}" y="${y}" width="${barW}" height="${barH}" rx="3" fill="${fill}"/>
+      <text x="${x+barW/2}" y="${y-5}" text-anchor="middle" font-size="10" fill="${fill}" font-family="monospace">${label}</text>
+      <text x="${x+barW/2}" y="${H-PAD.b+14}" text-anchor="middle" font-size="9" fill="#7880a0" font-family="monospace">${dateLabel}</text>`;
+  }).join('');
+
+  // avg line
+  const avgY = PAD.t + chartH - (((avgP - minP) / range) * (chartH * 0.75) + chartH * 0.15);
+  const avgLine = `
+    <line x1="${PAD.l}" y1="${avgY}" x2="${W-PAD.r}" y2="${avgY}" stroke="#7880a0" stroke-dasharray="4,3" stroke-width="1"/>
+    <text x="${PAD.l-4}" y="${avgY+4}" text-anchor="end" font-size="9" fill="#7880a0" font-family="monospace">avg</text>`;
+
+  // y-axis labels
+  const yLabels = [minP, avgP, maxP].map(p => {
+    const y = PAD.t + chartH - (((p - minP) / range) * (chartH * 0.75) + chartH * 0.15);
+    return `<text x="${PAD.l-6}" y="${y+4}" text-anchor="end" font-size="9" fill="#7880a0" font-family="monospace">${currency}${p.toFixed(2)}</text>`;
+  }).join('');
+
+  document.getElementById('ph-chart').innerHTML = `
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%;border-radius:8px;background:#1a1d27">
+      ${yLabels}${avgLine}${bars}
+    </svg>
+    <div style="display:flex;gap:14px;margin-top:8px;font-size:11px;font-family:monospace">
+      <span style="color:#4cbb8a">● Lowest: ${currency}${minP.toFixed(2)}</span>
+      <span style="color:#7880a0">● Avg: ${currency}${avgP.toFixed(2)}</span>
+      <span style="color:#e85050">● Highest: ${currency}${maxP.toFixed(2)}</span>
+      <span style="color:#e8a838">● Latest: ${currency}${lastP.toFixed(2)}</span>
+    </div>`;
+
+  // ── Table ──
+  document.getElementById('ph-table').innerHTML = `
+    <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
+      <table class="report-table">
+        <thead><tr><th>Date</th><th>Store</th><th>Qty</th><th>Price</th><th>vs Prev</th></tr></thead>
+        <tbody>${[...history].reverse().map((h,i,arr) => {
+          const prev = arr[i+1];
+          const prevP = prev ? prev.price : null;
+          let vsEl = '—';
+          if (prevP !== null) {
+            const diff = h.price - prevP;
+            const pct  = Math.round(Math.abs(diff)/prevP*100);
+            vsEl = Math.abs(diff) < 0.01 ? '→' :
+              diff > 0 ? `<span style="color:var(--danger)">↑${pct}%</span>` :
+                         `<span style="color:var(--ok)">↓${pct}%</span>`;
+          }
+          const isLow  = h.price === minP && prices.length > 1;
+          const isHigh = h.price === maxP && prices.length > 1 && minP !== maxP;
+          return `<tr>
+            <td style="font-family:monospace;font-size:12px">${fmtDate(h.date)}</td>
+            <td style="color:var(--muted);font-size:12px">${esc(h.store||'—')}</td>
+            <td style="font-family:monospace;font-size:12px">${history[history.length-1-i]?.qty||'—'}</td>
+            <td style="font-family:monospace;font-weight:700;color:${isLow?'var(--ok)':isHigh?'var(--danger)':'var(--text)'}">${h.raw||currency+h.price.toFixed(2)}${isLow?' 🏷':''}</td>
+            <td style="font-size:12px">${vsEl}</td>
+          </tr>`;
+        }).join('')}</tbody>
+      </table>
+    </div>`;
+
+  openModal('price-history-modal');
+}
+
+
 let stockCountId = null;
 
 function openStockCountModal(id) {
@@ -1746,6 +2013,7 @@ function saveStockCount() {
 // ═══════════════════════════════════════════
 let shoppingStores = new Set(['__all__']);
 let shoppingDays = 30;
+let shoppingTagFilter = null; // null = all tags
 
 function showView(name, btn) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
@@ -1765,6 +2033,10 @@ function getShoppingItems() {
     if (!shoppingStores.has('__all__')) {
       const itemStore = item.store && item.store.trim();
       if (!itemStore || !shoppingStores.has(itemStore)) return false;
+    }
+    // Tag filter
+    if (shoppingTagFilter !== null) {
+      if (!(item.tags || []).includes(shoppingTagFilter)) return false;
     }
     return true;
   }).map(item => {
@@ -1852,6 +2124,14 @@ function toggleStorePick(store, row) {
   }
 }
 
+
+function setShoppingTagFilter(index, btn) {
+  shoppingTagFilter = index;
+  buildShoppingTagFilterBarInline();
+  renderShoppingList();
+}
+
+
 function toggleShoppingDays() {
   shoppingDays = shoppingDays === 30 ? 7 : 30;
   document.getElementById('days-opt-30').classList.toggle('active', shoppingDays === 30);
@@ -1872,6 +2152,7 @@ function applyShoppingList() {
 }
 
 function renderShoppingList() {
+  buildShoppingTagFilterBarInline();
   const shoppingItems = getShoppingItems();
   const storeLabel = shoppingStores.has('__all__') ? 'All Stores' : [...shoppingStores].join(', ');
 
@@ -2022,6 +2303,7 @@ function openAddModal() {
   renderStars();
   document.getElementById('f-last-date').value = today();
   document.getElementById('f-last-qty').value = 1;
+  document.getElementById('f-last-price').value = '';
   document.getElementById('f-started-using').value = '';
   document.getElementById('price-search-input').value = '';
   document.getElementById('price-links').innerHTML = '';
@@ -2052,6 +2334,7 @@ function openEditModal(id) {
   const last = item.logs?.at(-1);
   document.getElementById('f-last-date').value = last?.date||today();
   document.getElementById('f-last-qty').value = last?.qty||1;
+  document.getElementById('f-last-price').value = last?.price||'';
   document.getElementById('f-started-using').value = item.startedUsing||'';
   document.getElementById('price-search-input').value = item.name;
   updatePriceLinks();
@@ -2143,21 +2426,24 @@ function saveItem() {
       item.imageUrl     = pendingImageUrl || item.imageUrl || null;
 
       // Update the most recent log entry's date and qty
-      const lastDate = document.getElementById('f-last-date').value;
-      const lastQty  = parseFloat(document.getElementById('f-last-qty').value)||1;
+      const lastDate  = document.getElementById('f-last-date').value;
+      const lastQty   = parseFloat(document.getElementById('f-last-qty').value)||1;
+      const lastPrice = document.getElementById('f-last-price').value.trim();
       if (lastDate) {
         if (item.logs && item.logs.length) {
-          item.logs[item.logs.length - 1].date = lastDate;
-          item.logs[item.logs.length - 1].qty  = lastQty;
+          item.logs[item.logs.length - 1].date  = lastDate;
+          item.logs[item.logs.length - 1].qty   = lastQty;
+          item.logs[item.logs.length - 1].price = lastPrice;
           item.logs.sort((a,b) => new Date(a.date) - new Date(b.date));
         } else {
-          item.logs = [{ id: uid(), date: lastDate, qty: lastQty, price: '', store: storeVal }];
+          item.logs = [{ id: uid(), date: lastDate, qty: lastQty, price: lastPrice, store: storeVal }];
         }
       }
     }
   } else {
-    const lastDate = document.getElementById('f-last-date').value;
-    const lastQty  = parseFloat(document.getElementById('f-last-qty').value)||1;
+    const lastDate  = document.getElementById('f-last-date').value;
+    const lastQty   = parseFloat(document.getElementById('f-last-qty').value)||1;
+    const lastPrice = document.getElementById('f-last-price').value.trim();
     items.push({
       id:           uid(),
       name,
@@ -2171,7 +2457,7 @@ function saveItem() {
       startedUsing,
       rating:       currentRating || null,
       imageUrl:     pendingImageUrl || null,
-      logs:         lastDate ? [{ id:uid(), date:lastDate, qty:lastQty, price:'', store: storeVal }] : []
+      logs:         lastDate ? [{ id:uid(), date:lastDate, qty:lastQty, price:lastPrice, store:storeVal }] : []
     });
   }
   saveData();
