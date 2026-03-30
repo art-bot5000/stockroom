@@ -530,11 +530,15 @@
       </div>
       <div class="setting-row">
         <div class="setting-info">
-          <h4>First reminder date</h4>
+          <h4>First reminder date &amp; time</h4>
           <p>When to send the first scheduled reminder</p>
         </div>
-        <input type="date" id="setting-email-start" onchange="saveSettings()"
-          style="background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-family:var(--sans);font-size:13px;outline:none">
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="date" id="setting-email-start" onchange="saveSettings()"
+            style="background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-family:var(--sans);font-size:13px;outline:none">
+          <input type="time" id="setting-email-start-time" onchange="saveSettings()"
+            style="background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-family:var(--sans);font-size:13px;outline:none;width:100px">
+        </div>
       </div>
       <div class="setting-row">
         <div class="setting-info"><h4>Repeat every</h4><p>How often to send after the first reminder</p></div>
@@ -1065,9 +1069,12 @@ function saveSettings() {
   settings.email          = document.getElementById('setting-email').value.trim();
   settings.emailInterval  = parseInt(document.getElementById('setting-email-interval').value);
   settings.emailStartDate = document.getElementById('setting-email-start').value || null;
+  settings.emailStartTime = document.getElementById('setting-email-start-time').value || '09:00';
   // customTags preserved — managed inline via addTag/deleteTag
   try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e){}
   updateLastSentUI();
+  // Push schedule to Worker so cron can act on it
+  pushScheduleToWorker();
   renderAll();
 }
 
@@ -1252,84 +1259,124 @@ function getItemsDueWithin(days) {
     }));
 }
 
+// Push the user's schedule + current items to the Worker KV
+// so the hourly cron can act on it without the app being open
+async function pushScheduleToWorker() {
+  if (!WORKER_URL || !settings.email || !settings.emailStartDate) return;
+  try {
+    const urgent   = getItemsDueWithin(7);
+    const upcoming = getItemsDueWithin(30).filter(i => i.daysLeft > 7);
+    await fetch(`${WORKER_URL}/set-schedule`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email:        settings.email,
+        startDate:    settings.emailStartDate,
+        startTime:    settings.emailStartTime || '09:00',
+        intervalDays: settings.emailInterval ?? 30,
+        urgent,
+        upcoming,
+      }),
+    });
+  } catch(e) {
+    console.warn('Could not push schedule to Worker:', e.message);
+  }
+}
+
+// Push fresh item data to Worker whenever items change
+async function pushItemsToWorker() {
+  if (!WORKER_URL || !settings.email) return;
+  try {
+    const urgent   = getItemsDueWithin(7);
+    const upcoming = getItemsDueWithin(30).filter(i => i.daysLeft > 7);
+    if (!urgent.length && !upcoming.length) return;
+    await fetch(`${WORKER_URL}/set-schedule`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        email:        settings.email,
+        startDate:    settings.emailStartDate,
+        startTime:    settings.emailStartTime || '09:00',
+        intervalDays: settings.emailInterval ?? 30,
+        urgent,
+        upcoming,
+      }),
+    });
+  } catch(e) {}
+}
+
 function updateLastSentUI() {
   const row      = document.getElementById('last-sent-row');
   const textEl   = document.getElementById('last-sent-text');
   const interval = settings.emailInterval ?? 30;
   if (!row || !textEl) return;
 
-  if (!settings.email || interval === 0) {
-    row.style.display = 'none';
-    return;
-  }
+  if (!settings.email || interval === 0) { row.style.display = 'none'; return; }
   row.style.display = 'flex';
 
   const lastSent  = settings.emailLastSent;
   const startDate = settings.emailStartDate;
+  const startTime = settings.emailStartTime || '09:00';
   const now       = new Date();
 
   if (!lastSent) {
     if (startDate) {
-      const start     = new Date(startDate + 'T09:00:00');
-      const daysUntil = Math.ceil((start - now) / 86400000);
-      if (daysUntil > 0) {
-        textEl.textContent = `First reminder scheduled for ${fmtDate(startDate)} (in ${daysUntil} day${daysUntil !== 1 ? 's' : ''})`;
+      const start     = new Date(`${startDate}T${startTime}:00`);
+      const minsUntil = Math.ceil((start - now) / 60000);
+      if (start > now) {
+        const timeStr = minsUntil < 120
+          ? `in ${minsUntil} minute${minsUntil !== 1 ? 's' : ''}`
+          : minsUntil < 1440
+            ? `in ${Math.ceil(minsUntil/60)} hour${Math.ceil(minsUntil/60) !== 1 ? 's' : ''}`
+            : `on ${fmtDate(startDate)} at ${startTime}`;
+        textEl.textContent = `☁️ First reminder scheduled ${timeStr} — Cloudflare will send automatically`;
       } else {
-        textEl.textContent = `First reminder due — will send on next app open`;
+        textEl.textContent = `⏳ First reminder is due — Cloudflare cron will send on next hourly check`;
       }
     } else {
-      textEl.textContent = 'Not scheduled — set a start date above';
+      textEl.textContent = 'Set a start date above to schedule automatic reminders';
     }
     return;
   }
 
-  const last      = new Date(lastSent);
-  const next      = new Date(last.getTime() + interval * 86400000);
+  const next      = new Date(new Date(lastSent).getTime() + interval * 86400000);
   const daysUntil = Math.ceil((next - now) / 86400000);
-  textEl.textContent = `Last sent ${fmtDate(lastSent)} · Next in ${daysUntil > 0 ? daysUntil + ' day' + (daysUntil !== 1 ? 's' : '') : 'overdue — will send on next open'}`;
+  textEl.textContent = `Last sent ${fmtDate(lastSent)} · Next ${daysUntil > 0
+    ? `in ${daysUntil} day${daysUntil !== 1 ? 's' : ''}`
+    : 'is overdue — Cloudflare will send on next hourly check'}`;
 }
 
 function resetLastSent() {
   settings.emailLastSent = null;
   try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e){}
+  if (WORKER_URL && settings.email) {
+    fetch(`${WORKER_URL}/reset-schedule`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: settings.email }),
+    }).catch(() => {});
+  }
   updateLastSentUI();
-  toast('Last sent date cleared');
+  toast('Schedule reset — next send will be at your start date/time');
 }
 
 function checkScheduledEmail() {
-  const interval  = settings.emailInterval ?? 30;
-  if (!settings.email || interval === 0) return;
-
-  const now       = new Date();
-  const lastSent  = settings.emailLastSent;
-  const startDate = settings.emailStartDate;
-
+  const interval = settings.emailInterval ?? 30;
+  if (!settings.email || interval === 0 || !settings.emailStartDate) return;
+  const now      = new Date();
+  const lastSent = settings.emailLastSent;
+  const start    = new Date(`${settings.emailStartDate}T${settings.emailStartTime || '09:00'}:00`);
   if (!lastSent) {
-    // Never sent — check if start date has been reached
-    if (startDate) {
-      const start = new Date(startDate + 'T09:00:00');
-      if (now >= start) {
-        sendReminderEmail(false);
-      }
-      // else: start date not reached yet, do nothing
-    }
-    // No start date set — don't auto-send, wait for user to set one
+    if (now >= start) sendReminderEmail(false);
     return;
   }
-
-  // Already sent before — check if interval has elapsed
   const daysSince = (now - new Date(lastSent)) / 86400000;
-  if (daysSince >= interval) {
-    sendReminderEmail(false);
-  }
+  if (daysSince >= interval) sendReminderEmail(false);
 }
 
 async function sendReminderEmail(manual = true) {
   const email = settings.email || document.getElementById('setting-email')?.value.trim();
-  if (!email) {
-    if (manual) toast('Enter your email address in Settings first');
-    return;
-  }
+  if (!email) { if (manual) toast('Enter your email address in Settings first'); return; }
 
   const urgent   = getItemsDueWithin(7);
   const upcoming = getItemsDueWithin(30).filter(i => i.daysLeft > 7);
@@ -1353,9 +1400,7 @@ async function sendReminderEmail(manual = true) {
       body: JSON.stringify({ to: email, urgent, upcoming }),
     });
     const data = await res.json();
-
     if (res.ok) {
-      // Record last sent
       settings.emailLastSent = new Date().toISOString();
       try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e){}
       updateLastSentUI();
@@ -1363,15 +1408,13 @@ async function sendReminderEmail(manual = true) {
         const total = urgent.length + upcoming.length;
         const statusEl = document.getElementById('email-status');
         if (statusEl) {
-          statusEl.textContent = `✓ Reminder sent to ${email} (${total} item${total !== 1 ? 's' : ''})`;
+          statusEl.textContent   = `✓ Reminder sent to ${email} (${total} item${total !== 1 ? 's' : ''})`;
           statusEl.style.color   = 'var(--ok)';
           statusEl.style.display = 'block';
         }
         toast('Reminder email sent ✓');
       }
-    } else {
-      throw new Error(data.error || 'Unknown error');
-    }
+    } else { throw new Error(data.error || 'Unknown error'); }
   } catch(err) {
     if (manual) {
       const statusEl = document.getElementById('email-status');
@@ -1389,7 +1432,6 @@ async function sendReminderEmail(manual = true) {
     }
   }
 }
-
 
 let filtersOpen = false;
 
@@ -1447,6 +1489,8 @@ function renderAll() {
   if (intervalEl) intervalEl.value = settings.emailInterval ?? 30;
   const startEl = document.getElementById('setting-email-start');
   if (startEl) startEl.value = settings.emailStartDate || '';
+  const startTimeEl = document.getElementById('setting-email-start-time');
+  if (startTimeEl) startTimeEl.value = settings.emailStartTime || '09:00';
   updateLastSentUI();
 }
 
