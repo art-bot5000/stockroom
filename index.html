@@ -507,14 +507,26 @@
   <!-- SETTINGS VIEW -->
   <div class="view" id="view-settings">
     <div class="settings-card">
-      <h3>☁️ Google Drive Sync</h3>
+      <h3>☁️ Cloud Sync</h3>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:14px">Choose one provider to sync your data. Your data is stored in your own account.</p>
+
       <div class="setting-row">
-        <div class="setting-info"><h4>Connection</h4><p>Sync your stockroom to Google Drive</p></div>
+        <div class="setting-info"><h4>Google Drive</h4><p>Sync to your Google Drive account</p></div>
         <div style="display:flex;align-items:center;gap:8px">
           <span id="drive-status" style="display:none;align-items:center;gap:6px;font-size:12px;color:var(--ok);font-family:var(--mono)">✓ Connected</span>
           <button id="drive-connect-btn" class="btn btn-blue btn-sm" onclick="connectDrive()">Connect Drive</button>
           <button id="drive-sync-btn" class="btn btn-ghost btn-sm" style="display:none" onclick="syncNow()">Sync Now</button>
           <button id="drive-signout-btn" class="btn btn-danger btn-sm" style="display:none" onclick="signOutDrive()">Sign Out</button>
+        </div>
+      </div>
+
+      <div class="setting-row">
+        <div class="setting-info"><h4>Dropbox</h4><p>Sync to your Dropbox account</p></div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <span id="dropbox-status" style="display:none;align-items:center;gap:6px;font-size:12px;color:var(--ok);font-family:var(--mono)">✓ Connected</span>
+          <button id="dropbox-connect-btn" class="btn btn-ghost btn-sm" onclick="connectDropbox()">Connect Dropbox</button>
+          <button id="dropbox-sync-btn" class="btn btn-ghost btn-sm" style="display:none" onclick="syncDropbox()">Sync Now</button>
+          <button id="dropbox-signout-btn" class="btn btn-danger btn-sm" style="display:none" onclick="signOutDropbox()">Sign Out</button>
         </div>
       </div>
     </div>
@@ -953,10 +965,12 @@ function getStores(code) { return STORES_BY_COUNTRY[code] || STORES_BY_COUNTRY.O
 // ═══════════════════════════════════════════
 //  CONFIG
 // ═══════════════════════════════════════════
-const CLIENT_ID  = '589308993147-rfj3kbaave6uhf3k1ojes3ph2l1pkd1m.apps.googleusercontent.com';
-const SCOPES     = 'https://www.googleapis.com/auth/drive.file';
-const FILE_NAME  = 'stockroom_data.json';
-const WORKER_URL = 'https://stockroom-email.pete-92f.workers.dev';
+const CLIENT_ID       = '589308993147-rfj3kbaave6uhf3k1ojes3ph2l1pkd1m.apps.googleusercontent.com';
+const SCOPES          = 'https://www.googleapis.com/auth/drive.file';
+const FILE_NAME       = 'stockroom_data.json';
+const WORKER_URL      = 'https://stockroom-email.pete-92f.workers.dev';
+const DROPBOX_APP_KEY = 'v42gsxqwb7fommt';
+const DROPBOX_FILE    = '/stockroom_data.json';  // stored in app folder
 
 // ═══════════════════════════════════════════
 //  STATE
@@ -973,9 +987,13 @@ let currentRating = 0;        // rating being set in modal
 let wizardCountry = 'GB';
 
 // Drive state
-let accessToken = null;
-let driveFileId = null;
+let accessToken    = null;
+let driveFileId    = null;
 let driveConnected = false;
+
+// Dropbox state
+let dropboxToken     = null;
+let dropboxConnected = false;
 
 // ═══════════════════════════════════════════
 //  MODAL HELPERS (defined early — used everywhere)
@@ -1683,7 +1701,7 @@ function toggleItemTag(itemId, tagIndex) {
   saveData();
   // Re-render just this card's tags without full grid re-render
   renderAll();
-  if (driveConnected) setTimeout(syncNow, 400);
+  if (driveConnected) setTimeout(syncAll, 400);
 }
 
 function buildTagFilterBar() {
@@ -1776,7 +1794,7 @@ function addTag(name) {
   buildTagFilterBar();
   buildShoppingTagFilterBarInline();
   renderGrid();
-  if (driveConnected) setTimeout(syncNow, 400);
+  if (driveConnected) setTimeout(syncAll, 400);
 }
 
 function deleteTag(index) {
@@ -1794,7 +1812,7 @@ function deleteTag(index) {
   buildTagFilterBar();
   buildShoppingTagFilterBarInline();
   renderGrid();
-  if (driveConnected) setTimeout(syncNow, 400);
+  if (driveConnected) setTimeout(syncAll, 400);
 }
 
 function setTagFilter(index, btn) {
@@ -2050,7 +2068,7 @@ function applyFrequencySuggestion(id, avgMonths) {
   saveData();
   renderAll();
   toast(`Updated to ${rounded} month${rounded !== 1 ? 's' : ''} per purchase ✓`);
-  if (driveConnected) setTimeout(syncNow, 400);
+  if (driveConnected) setTimeout(syncAll, 400);
 }
 
 
@@ -2258,7 +2276,7 @@ function rateItem(id, val) {
   if (!item) return;
   item.rating = item.rating === val ? null : val;
   saveData();
-  if (driveConnected) setTimeout(syncNow, 400);
+  if (driveConnected) setTimeout(syncAll, 400);
   // Update stars in place — clear preview, set on
   const rating = item.rating || 0;
   document.querySelectorAll(`.card-star[data-id="${id}"]`).forEach(s => {
@@ -2496,7 +2514,7 @@ function saveStockCount() {
   closeModal('stock-count-modal');
   renderAll();
   toast(val === '' ? 'Stock count cleared' : 'Stock count updated ✓');
-  if (driveConnected) setTimeout(syncNow, 400);
+  if (driveConnected) setTimeout(syncAll, 400);
 }
 
 // ═══════════════════════════════════════════
@@ -2955,7 +2973,7 @@ function saveItem() {
   closeModal('item-modal');
   renderAll();
   toast('Item saved ✓');
-  if (driveConnected) setTimeout(syncNow, 400);
+  if (driveConnected) setTimeout(syncAll, 400);
 }
 
 function saveLog() {
@@ -2977,7 +2995,7 @@ function saveLog() {
   closeModal('log-modal');
   renderAll();
   toast('Purchase logged ✓');
-  if (driveConnected) setTimeout(syncNow, 400);
+  if (driveConnected) setTimeout(syncAll, 400);
 }
 
 function deleteItem(id) {
@@ -3255,32 +3273,46 @@ function handleOAuthRedirect() {
   const token  = params.get('access_token');
   if (!token) return;
 
-  // Clean the token out of the URL immediately
   history.replaceState(null, '', location.pathname);
 
-  accessToken    = token;
-  driveConnected = true;
-  try { localStorage.setItem('stockroom_drive', JSON.stringify({ driveFileId, driveConnected })); } catch(e){}
-  updateDriveUI();
+  // Detect which provider returned the token
+  const provider = sessionStorage.getItem('stockroom_auth_provider') || 'drive';
+  sessionStorage.removeItem('stockroom_auth_provider');
 
-  // If we came from the wizard, advance to country step
-  const wizardStep = localStorage.getItem('stockroom_wizard_step');
-  if (wizardStep === '2') {
-    localStorage.removeItem('stockroom_wizard_step');
-    wizardNext();
+  if (provider === 'dropbox') {
+    dropboxToken     = token;
+    dropboxConnected = true;
+    try { localStorage.setItem('stockroom_dropbox', JSON.stringify({ dropboxToken, dropboxConnected })); } catch(e){}
+    updateSyncUI();
+    syncDropbox().then(() => {
+      try {
+        const preAuthView = sessionStorage.getItem('stockroom_pre_auth_view');
+        sessionStorage.removeItem('stockroom_pre_auth_view');
+        if (preAuthView === 'settings') {
+          const settingsTab = [...document.querySelectorAll('.tab')].find(t => t.textContent.includes('Settings'));
+          if (settingsTab) showView('settings', settingsTab);
+        }
+      } catch(e){}
+    });
+  } else {
+    // Google Drive
+    accessToken    = token;
+    driveConnected = true;
+    try { localStorage.setItem('stockroom_drive', JSON.stringify({ driveFileId, driveConnected })); } catch(e){}
+    updateSyncUI();
+    const wizardStep = localStorage.getItem('stockroom_wizard_step');
+    if (wizardStep === '2') { localStorage.removeItem('stockroom_wizard_step'); wizardNext(); }
+    syncNow().then(() => {
+      try {
+        const preAuthView = sessionStorage.getItem('stockroom_pre_auth_view');
+        sessionStorage.removeItem('stockroom_pre_auth_view');
+        if (preAuthView === 'settings') {
+          const settingsTab = [...document.querySelectorAll('.tab')].find(t => t.textContent.includes('Settings'));
+          if (settingsTab) showView('settings', settingsTab);
+        }
+      } catch(e){}
+    });
   }
-
-  // Sync and then navigate to Settings so user can see the connected state
-  syncNow().then(() => {
-    try {
-      const preAuthView = sessionStorage.getItem('stockroom_pre_auth_view');
-      sessionStorage.removeItem('stockroom_pre_auth_view');
-      if (preAuthView === 'settings') {
-        const settingsTab = [...document.querySelectorAll('.tab')].find(t => t.textContent.includes('Settings'));
-        if (settingsTab) showView('settings', settingsTab);
-      }
-    } catch(e){}
-  });
 }
 
 async function syncNow() {
@@ -3370,47 +3402,168 @@ async function uploadToDrive(payload) {
   if (!res.ok) throw new Error('Drive upload failed: ' + res.status);
 }
 
-function signOutDrive() {
-  if (!confirm('Sign out of Google Drive? Your data will stay on this device but won\'t sync until you reconnect.')) return;
-  accessToken = null;
-  driveConnected = false;
-  driveFileId = null;
-  try { localStorage.removeItem('stockroom_drive'); } catch(e) {}
-  updateDriveUI();
-  toast('Signed out of Google Drive');
+// ═══════════════════════════════════════════
+//  DROPBOX SYNC
+// ═══════════════════════════════════════════
+function connectDropbox() {
+  try { sessionStorage.setItem('stockroom_pre_auth_view', 'settings'); } catch(e){}
+  try { sessionStorage.setItem('stockroom_auth_provider', 'dropbox'); } catch(e){}
+  const authUrl = `https://www.dropbox.com/oauth2/authorize`
+    + `?client_id=${DROPBOX_APP_KEY}`
+    + `&redirect_uri=${encodeURIComponent(location.origin + location.pathname)}`
+    + `&response_type=token`
+    + `&token_access_type=offline`;
+  location.href = authUrl;
 }
 
-function updateDriveUI() {
-  const pill = document.getElementById('sync-pill');
-  const pillLabel = document.getElementById('sync-label');
-  const driveBtn = document.getElementById('drive-connect-btn');
-  const driveStatus = document.getElementById('drive-status');
-  const syncBtn = document.getElementById('drive-sync-btn');
+async function syncDropbox() {
+  if (!dropboxConnected || !dropboxToken) return;
+  updateSyncPill('syncing');
+  try {
+    const payload = JSON.stringify({ items, settings, lastSynced: new Date().toISOString() });
 
+    // Try to download existing file
+    const dlRes = await fetch('https://content.dropboxapi.com/2/files/download', {
+      method: 'POST',
+      headers: {
+        'Authorization':   `Bearer ${dropboxToken}`,
+        'Dropbox-API-Arg': JSON.stringify({ path: DROPBOX_FILE }),
+      },
+    });
+
+    if (dlRes.ok) {
+      // File exists — merge
+      let remote = null;
+      try { remote = await dlRes.json(); } catch(e) {}
+      if (remote && Array.isArray(remote.items)) {
+        const localIds  = new Set(items.map(i => i.id));
+        const remoteOnly = remote.items.filter(i => !localIds.has(i.id));
+        if (remoteOnly.length > 0) { items = [...items, ...remoteOnly]; saveData(); }
+        if (remote.settings) {
+          const localTags    = settings.customTags;
+          settings           = { ...remote.settings, ...settings };
+          const remoteTags   = remote.settings.customTags || [];
+          const localDefined  = (localTags||[]).filter(t=>t&&t.trim()).length;
+          const remoteDefined = remoteTags.filter(t=>t&&t.trim()).length;
+          settings.customTags = localDefined >= remoteDefined ? (localTags||[]) : remoteTags;
+          try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e){}
+        }
+        if (remoteOnly.length > 0) renderAll();
+      }
+    }
+    // File doesn't exist (404) — will be created on upload
+
+    // Upload merged data
+    await uploadToDropbox(payload);
+    updateSyncPill('synced', 'dropbox');
+
+  } catch(err) {
+    console.error('Dropbox sync error:', err);
+    updateSyncPill('error');
+  }
+}
+
+async function uploadToDropbox(payload) {
+  const res = await fetch('https://content.dropboxapi.com/2/files/upload', {
+    method: 'POST',
+    headers: {
+      'Authorization':   `Bearer ${dropboxToken}`,
+      'Dropbox-API-Arg': JSON.stringify({ path: DROPBOX_FILE, mode: 'overwrite', autorename: false }),
+      'Content-Type':    'application/octet-stream',
+    },
+    body: payload,
+  });
+  if (!res.ok) throw new Error('Dropbox upload failed: ' + res.status);
+}
+
+function signOutDropbox() {
+  if (!confirm('Sign out of Dropbox? Your data stays on this device but won\'t sync until you reconnect.')) return;
+  dropboxToken     = null;
+  dropboxConnected = false;
+  try { localStorage.removeItem('stockroom_dropbox'); } catch(e){}
+  updateSyncUI();
+  toast('Signed out of Dropbox');
+}
+
+// ── Unified sync: tries whichever provider is connected ──
+async function syncAll() {
+  if (driveConnected)   await syncNow();
+  if (dropboxConnected) await syncDropbox();
+}
+
+// ── Unified UI update for both providers ────────────────
+function updateSyncUI() {
+  updateDriveUI();
+  updateDropboxUI();
+  // Update header pill to reflect overall state
+  const pill  = document.getElementById('sync-pill');
+  const label = document.getElementById('sync-label');
+  if (!pill || !label) return;
   if (driveConnected) {
-    pill.className = 'sync-pill synced';
-    pillLabel.textContent = 'Drive synced';
-    if (driveBtn) driveBtn.style.display = 'none';
-    if (driveStatus) driveStatus.style.display = 'flex';
-    if (syncBtn) syncBtn.style.display = 'inline-flex';
-    const signOutBtn = document.getElementById('drive-signout-btn');
+    pill.className    = 'sync-pill synced';
+    label.textContent = 'Drive synced';
+  } else if (dropboxConnected) {
+    pill.className    = 'sync-pill synced';
+    label.textContent = 'Dropbox synced';
+  } else {
+    pill.className    = 'sync-pill pending';
+    label.textContent = 'Local only';
+  }
+}
+
+function updateDropboxUI() {
+  const connectBtn  = document.getElementById('dropbox-connect-btn');
+  const status      = document.getElementById('dropbox-status');
+  const syncBtn     = document.getElementById('dropbox-sync-btn');
+  const signOutBtn  = document.getElementById('dropbox-signout-btn');
+  if (dropboxConnected) {
+    if (connectBtn) connectBtn.style.display = 'none';
+    if (status)     status.style.display     = 'flex';
+    if (syncBtn)    syncBtn.style.display    = 'inline-flex';
     if (signOutBtn) signOutBtn.style.display = 'inline-flex';
   } else {
-    pill.className = 'sync-pill pending';
-    pillLabel.textContent = 'Local only';
-    if (driveBtn) driveBtn.style.display = 'inline-flex';
-    if (driveStatus) driveStatus.style.display = 'none';
-    if (syncBtn) syncBtn.style.display = 'none';
-    const signOutBtn = document.getElementById('drive-signout-btn');
+    if (connectBtn) connectBtn.style.display = 'inline-flex';
+    if (status)     status.style.display     = 'none';
+    if (syncBtn)    syncBtn.style.display    = 'none';
     if (signOutBtn) signOutBtn.style.display = 'none';
   }
 }
 
-function updateSyncPill(state) {
-  const pill = document.getElementById('sync-pill');
+function signOutDrive() {
+  if (!confirm('Sign out of Google Drive? Your data will stay on this device but won\'t sync until you reconnect.')) return;
+  accessToken    = null;
+  driveConnected = false;
+  driveFileId    = null;
+  try { localStorage.removeItem('stockroom_drive'); } catch(e) {}
+  updateSyncUI();
+  toast('Signed out of Google Drive');
+}
+
+function updateDriveUI() {
+  const driveBtn   = document.getElementById('drive-connect-btn');
+  const driveStatus = document.getElementById('drive-status');
+  const syncBtn    = document.getElementById('drive-sync-btn');
+  const signOutBtn = document.getElementById('drive-signout-btn');
+  if (driveConnected) {
+    if (driveBtn)   driveBtn.style.display   = 'none';
+    if (driveStatus) driveStatus.style.display = 'flex';
+    if (syncBtn)    syncBtn.style.display    = 'inline-flex';
+    if (signOutBtn) signOutBtn.style.display = 'inline-flex';
+  } else {
+    if (driveBtn)   driveBtn.style.display   = 'inline-flex';
+    if (driveStatus) driveStatus.style.display = 'none';
+    if (syncBtn)    syncBtn.style.display    = 'none';
+    if (signOutBtn) signOutBtn.style.display = 'none';
+  }
+}
+
+function updateSyncPill(state, provider) {
+  const pill  = document.getElementById('sync-pill');
   const label = document.getElementById('sync-label');
+  if (!pill || !label) return;
+  const name = provider === 'dropbox' ? 'Dropbox' : 'Drive';
   if (state === 'syncing') { pill.className = 'sync-pill pending'; label.textContent = 'Syncing…'; }
-  if (state === 'synced')  { pill.className = 'sync-pill synced';  label.textContent = 'Drive synced'; }
+  if (state === 'synced')  { pill.className = 'sync-pill synced';  label.textContent = `${name} synced`; }
   if (state === 'error')   { pill.className = 'sync-pill error';   label.textContent = 'Sync error'; }
 }
 
@@ -3422,6 +3575,12 @@ function init() {
   try {
     const d = JSON.parse(localStorage.getItem('stockroom_drive')||'{}');
     if (d.driveConnected) { driveConnected = true; driveFileId = d.driveFileId || null; }
+  } catch(e){}
+
+  // Restore Dropbox state
+  try {
+    const db = JSON.parse(localStorage.getItem('stockroom_dropbox')||'{}');
+    if (db.dropboxConnected) { dropboxConnected = true; dropboxToken = db.dropboxToken || null; }
   } catch(e){}
 
   // Handle OAuth token in URL hash
@@ -3445,7 +3604,7 @@ function init() {
     wizardNext();
   }
 
-  updateDriveUI();
+  updateSyncUI();
   renderAll();
   // Check if a scheduled reminder is due — runs after items are loaded
   setTimeout(checkScheduledEmail, 2000);
