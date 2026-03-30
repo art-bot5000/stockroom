@@ -528,11 +528,26 @@
           onchange="saveSettings()">
       </div>
       <div class="setting-row">
+        <div class="setting-info"><h4>Reminder frequency</h4><p>How often to send the reminder automatically</p></div>
+        <select id="setting-email-interval" onchange="saveSettings()"
+          style="width:140px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 28px 6px 8px;font-family:var(--sans);font-size:13px">
+          <option value="0">Manual only</option>
+          <option value="7">Weekly</option>
+          <option value="14">Fortnightly</option>
+          <option value="30" selected>Monthly</option>
+          <option value="60">Every 2 months</option>
+        </select>
+      </div>
+      <div class="setting-row" id="last-sent-row" style="display:none">
+        <div class="setting-info"><h4>Last reminder sent</h4><p id="last-sent-text">Never</p></div>
+        <button class="btn btn-ghost btn-sm" onclick="resetLastSent()">Reset</button>
+      </div>
+      <div class="setting-row">
         <div class="setting-info">
-          <h4>Send reminder now</h4>
-          <p>Sends items running out within 30 days to your email</p>
+          <h4>Send now</h4>
+          <p>Send a reminder immediately with 7-day and 30-day items</p>
         </div>
-        <button class="btn btn-primary btn-sm" id="send-reminder-btn" onclick="sendReminderEmail()">📧 Send</button>
+        <button class="btn btn-primary btn-sm" id="send-reminder-btn" onclick="sendReminderEmail(true)">📧 Send Now</button>
       </div>
       <div id="email-status" style="font-size:12px;margin-top:8px;display:none"></div>
     </div>
@@ -1033,11 +1048,13 @@ function saveData() {
   } catch(e) { console.warn('stockroom: could not save items', e); }
 }
 function saveSettings() {
-  settings.threshold = parseInt(document.getElementById('setting-threshold').value);
-  settings.country   = document.getElementById('setting-country').value;
-  settings.email     = document.getElementById('setting-email').value.trim();
+  settings.threshold     = parseInt(document.getElementById('setting-threshold').value);
+  settings.country       = document.getElementById('setting-country').value;
+  settings.email         = document.getElementById('setting-email').value.trim();
+  settings.emailInterval = parseInt(document.getElementById('setting-email-interval').value);
   // customTags preserved — managed inline via addTag/deleteTag
   try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e){}
+  updateLastSentUI();
   renderAll();
 }
 
@@ -1069,9 +1086,8 @@ function updateCountryConfirm() {
 }
 
 function wizardConnectDrive() {
-  connectDrive();
-  // After OAuth the page will reload via hash — advance wizard past step 1 flag
   localStorage.setItem('stockroom_wizard_step', '2');
+  connectDrive(); // now redirects in same tab
 }
 
 function wizardNext() {
@@ -1209,14 +1225,10 @@ function starsHTML(rating) {
 // ═══════════════════════════════════════════
 //  EMAIL REMINDERS
 // ═══════════════════════════════════════════
-async function sendReminderEmail() {
-  const email = document.getElementById('setting-email').value.trim();
-  if (!email) { toast('Enter your email address first'); return; }
-
-  const threshold = 30; // days
-  const dueItems = items
+function getItemsDueWithin(days) {
+  return items
     .map(item => { const s = calcStock(item); return s ? { item, daysLeft: s.daysLeft } : null; })
-    .filter(x => x && x.daysLeft <= threshold)
+    .filter(x => x && x.daysLeft <= days)
     .sort((a, b) => a.daysLeft - b.daysLeft)
     .map(({ item, daysLeft }) => ({
       name:    item.name,
@@ -1225,40 +1237,116 @@ async function sendReminderEmail() {
       url:     item.url   || '',
       rating:  item.rating || null,
     }));
+}
 
-  if (!dueItems.length) {
-    toast('Nothing running out in the next 30 days — nothing to send!');
+function updateLastSentUI() {
+  const row     = document.getElementById('last-sent-row');
+  const textEl  = document.getElementById('last-sent-text');
+  const interval = settings.emailInterval ?? 30;
+  if (!row || !textEl) return;
+
+  if (!settings.email || interval === 0) {
+    row.style.display = 'none';
+    return;
+  }
+  row.style.display = 'flex';
+
+  if (!settings.emailLastSent) {
+    textEl.textContent = 'Never';
+    return;
+  }
+  const last = new Date(settings.emailLastSent);
+  const next = new Date(last.getTime() + interval * 86400000);
+  const now  = new Date();
+  const daysUntil = Math.ceil((next - now) / 86400000);
+  textEl.textContent = `${fmtDate(settings.emailLastSent)} · Next in ${daysUntil > 0 ? daysUntil + ' day' + (daysUntil !== 1 ? 's' : '') : 'overdue'}`;
+}
+
+function resetLastSent() {
+  settings.emailLastSent = null;
+  try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e){}
+  updateLastSentUI();
+  toast('Last sent date cleared');
+}
+
+function checkScheduledEmail() {
+  const interval = settings.emailInterval ?? 30;
+  if (!settings.email || interval === 0) return;
+  if (!settings.emailLastSent) {
+    // Never sent — send on first load if there are items due
+    sendReminderEmail(false);
+    return;
+  }
+  const last     = new Date(settings.emailLastSent);
+  const daysSince = (Date.now() - last.getTime()) / 86400000;
+  if (daysSince >= interval) {
+    sendReminderEmail(false); // silent auto-send
+  }
+}
+
+async function sendReminderEmail(manual = true) {
+  const email = settings.email || document.getElementById('setting-email')?.value.trim();
+  if (!email) {
+    if (manual) toast('Enter your email address in Settings first');
     return;
   }
 
-  const btn = document.getElementById('send-reminder-btn');
-  const statusEl = document.getElementById('email-status');
-  btn.textContent = '⏳ Sending…';
-  btn.disabled = true;
-  statusEl.style.display = 'none';
+  const urgent   = getItemsDueWithin(7);
+  const upcoming = getItemsDueWithin(30).filter(i => i.daysLeft > 7);
+
+  if (!urgent.length && !upcoming.length) {
+    if (manual) toast('Nothing running out in the next 30 days — nothing to send!');
+    return;
+  }
+
+  if (manual) {
+    const btn = document.getElementById('send-reminder-btn');
+    const statusEl = document.getElementById('email-status');
+    if (btn) { btn.textContent = '⏳ Sending…'; btn.disabled = true; }
+    if (statusEl) statusEl.style.display = 'none';
+  }
 
   try {
     const res = await fetch(`${WORKER_URL}/send-reminder`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ to: email, items: dueItems }),
+      body: JSON.stringify({ to: email, urgent, upcoming }),
     });
     const data = await res.json();
+
     if (res.ok) {
-      statusEl.textContent = `✓ Reminder sent to ${email} (${dueItems.length} item${dueItems.length!==1?'s':''})`;
-      statusEl.style.color = 'var(--ok)';
-      statusEl.style.display = 'block';
-      toast('Reminder email sent ✓');
+      // Record last sent
+      settings.emailLastSent = new Date().toISOString();
+      try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e){}
+      updateLastSentUI();
+      if (manual) {
+        const total = urgent.length + upcoming.length;
+        const statusEl = document.getElementById('email-status');
+        if (statusEl) {
+          statusEl.textContent = `✓ Reminder sent to ${email} (${total} item${total !== 1 ? 's' : ''})`;
+          statusEl.style.color   = 'var(--ok)';
+          statusEl.style.display = 'block';
+        }
+        toast('Reminder email sent ✓');
+      }
     } else {
-      throw new Error(data.message || data.error || 'Unknown error');
+      throw new Error(data.error || 'Unknown error');
     }
   } catch(err) {
-    statusEl.textContent = `✗ Failed: ${err.message}`;
-    statusEl.style.color = 'var(--danger)';
-    statusEl.style.display = 'block';
+    if (manual) {
+      const statusEl = document.getElementById('email-status');
+      if (statusEl) {
+        statusEl.textContent   = `✗ Failed: ${err.message}`;
+        statusEl.style.color   = 'var(--danger)';
+        statusEl.style.display = 'block';
+      }
+    }
+    console.error('Email reminder error:', err);
   } finally {
-    btn.textContent = '📧 Send';
-    btn.disabled = false;
+    if (manual) {
+      const btn = document.getElementById('send-reminder-btn');
+      if (btn) { btn.textContent = '📧 Send Now'; btn.disabled = false; }
+    }
   }
 }
 
@@ -1315,6 +1403,9 @@ function renderAll() {
   document.getElementById('setting-country').value   = settings.country;
   const emailEl = document.getElementById('setting-email');
   if (emailEl) emailEl.value = settings.email || '';
+  const intervalEl = document.getElementById('setting-email-interval');
+  if (intervalEl) intervalEl.value = settings.emailInterval ?? 30;
+  updateLastSentUI();
 }
 
 function renderGrid() {
@@ -2892,13 +2983,15 @@ function buildSettingsCountrySelect() {
 //  GOOGLE DRIVE SYNC
 // ═══════════════════════════════════════════
 function connectDrive() {
+  // Store current scroll position and view so we can restore after redirect
+  try { sessionStorage.setItem('stockroom_pre_auth_view', 'settings'); } catch(e){}
   const authUrl = `https://accounts.google.com/o/oauth2/v2/auth`
     + `?client_id=${CLIENT_ID}`
     + `&redirect_uri=${encodeURIComponent(location.origin + location.pathname)}`
     + `&response_type=token`
     + `&scope=${encodeURIComponent(SCOPES)}`
     + `&prompt=consent`;
-  window.open(authUrl, 'gdrive_auth', 'width=500,height=620');
+  location.href = authUrl;
 }
 
 // ═══════════════════════════════════════════
@@ -3073,14 +3166,35 @@ function handleOAuthRedirect() {
   const hash = window.location.hash;
   if (!hash.includes('access_token')) return;
   const params = new URLSearchParams(hash.slice(1));
-  const token = params.get('access_token');
+  const token  = params.get('access_token');
   if (!token) return;
+
+  // Clean the token out of the URL immediately
   history.replaceState(null, '', location.pathname);
-  accessToken = token;
+
+  accessToken    = token;
   driveConnected = true;
   try { localStorage.setItem('stockroom_drive', JSON.stringify({ driveFileId, driveConnected })); } catch(e){}
   updateDriveUI();
-  syncNow();
+
+  // If we came from the wizard, advance to country step
+  const wizardStep = localStorage.getItem('stockroom_wizard_step');
+  if (wizardStep === '2') {
+    localStorage.removeItem('stockroom_wizard_step');
+    wizardNext();
+  }
+
+  // Sync and then navigate to Settings so user can see the connected state
+  syncNow().then(() => {
+    try {
+      const preAuthView = sessionStorage.getItem('stockroom_pre_auth_view');
+      sessionStorage.removeItem('stockroom_pre_auth_view');
+      if (preAuthView === 'settings') {
+        const settingsTab = [...document.querySelectorAll('.tab')].find(t => t.textContent.includes('Settings'));
+        if (settingsTab) showView('settings', settingsTab);
+      }
+    } catch(e){}
+  });
 }
 
 async function syncNow() {
@@ -3246,9 +3360,9 @@ function init() {
   }
 
   updateDriveUI();
-  renderEmailSettingsUI();
-  checkEmailRegistrationOnLoad();
   renderAll();
+  // Check if a scheduled reminder is due — runs after items are loaded
+  setTimeout(checkScheduledEmail, 2000);
 }
 
 init();
