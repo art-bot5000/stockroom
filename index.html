@@ -521,6 +521,7 @@
 
     <div class="settings-card">
       <h3>📧 Email Reminders</h3>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:4px">Settings save automatically when changed.</p>
       <div class="setting-row">
         <div class="setting-info"><h4>Your email address</h4><p>Where to send low-stock reminders</p></div>
         <input type="email" id="setting-email" placeholder="you@example.com"
@@ -528,7 +529,15 @@
           onchange="saveSettings()">
       </div>
       <div class="setting-row">
-        <div class="setting-info"><h4>Reminder frequency</h4><p>How often to send the reminder automatically</p></div>
+        <div class="setting-info">
+          <h4>First reminder date</h4>
+          <p>When to send the first scheduled reminder</p>
+        </div>
+        <input type="date" id="setting-email-start" onchange="saveSettings()"
+          style="background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-family:var(--sans);font-size:13px;outline:none">
+      </div>
+      <div class="setting-row">
+        <div class="setting-info"><h4>Repeat every</h4><p>How often to send after the first reminder</p></div>
         <select id="setting-email-interval" onchange="saveSettings()"
           style="width:140px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 28px 6px 8px;font-family:var(--sans);font-size:13px">
           <option value="0">Manual only</option>
@@ -539,7 +548,10 @@
         </select>
       </div>
       <div class="setting-row" id="last-sent-row" style="display:none">
-        <div class="setting-info"><h4>Last reminder sent</h4><p id="last-sent-text">Never</p></div>
+        <div class="setting-info">
+          <h4>Schedule status</h4>
+          <p id="last-sent-text">Not sent yet</p>
+        </div>
         <button class="btn btn-ghost btn-sm" onclick="resetLastSent()">Reset</button>
       </div>
       <div class="setting-row">
@@ -1048,10 +1060,11 @@ function saveData() {
   } catch(e) { console.warn('stockroom: could not save items', e); }
 }
 function saveSettings() {
-  settings.threshold     = parseInt(document.getElementById('setting-threshold').value);
-  settings.country       = document.getElementById('setting-country').value;
-  settings.email         = document.getElementById('setting-email').value.trim();
-  settings.emailInterval = parseInt(document.getElementById('setting-email-interval').value);
+  settings.threshold      = parseInt(document.getElementById('setting-threshold').value);
+  settings.country        = document.getElementById('setting-country').value;
+  settings.email          = document.getElementById('setting-email').value.trim();
+  settings.emailInterval  = parseInt(document.getElementById('setting-email-interval').value);
+  settings.emailStartDate = document.getElementById('setting-email-start').value || null;
   // customTags preserved — managed inline via addTag/deleteTag
   try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e){}
   updateLastSentUI();
@@ -1240,8 +1253,8 @@ function getItemsDueWithin(days) {
 }
 
 function updateLastSentUI() {
-  const row     = document.getElementById('last-sent-row');
-  const textEl  = document.getElementById('last-sent-text');
+  const row      = document.getElementById('last-sent-row');
+  const textEl   = document.getElementById('last-sent-text');
   const interval = settings.emailInterval ?? 30;
   if (!row || !textEl) return;
 
@@ -1251,15 +1264,29 @@ function updateLastSentUI() {
   }
   row.style.display = 'flex';
 
-  if (!settings.emailLastSent) {
-    textEl.textContent = 'Never';
+  const lastSent  = settings.emailLastSent;
+  const startDate = settings.emailStartDate;
+  const now       = new Date();
+
+  if (!lastSent) {
+    if (startDate) {
+      const start     = new Date(startDate + 'T09:00:00');
+      const daysUntil = Math.ceil((start - now) / 86400000);
+      if (daysUntil > 0) {
+        textEl.textContent = `First reminder scheduled for ${fmtDate(startDate)} (in ${daysUntil} day${daysUntil !== 1 ? 's' : ''})`;
+      } else {
+        textEl.textContent = `First reminder due — will send on next app open`;
+      }
+    } else {
+      textEl.textContent = 'Not scheduled — set a start date above';
+    }
     return;
   }
-  const last = new Date(settings.emailLastSent);
-  const next = new Date(last.getTime() + interval * 86400000);
-  const now  = new Date();
+
+  const last      = new Date(lastSent);
+  const next      = new Date(last.getTime() + interval * 86400000);
   const daysUntil = Math.ceil((next - now) / 86400000);
-  textEl.textContent = `${fmtDate(settings.emailLastSent)} · Next in ${daysUntil > 0 ? daysUntil + ' day' + (daysUntil !== 1 ? 's' : '') : 'overdue'}`;
+  textEl.textContent = `Last sent ${fmtDate(lastSent)} · Next in ${daysUntil > 0 ? daysUntil + ' day' + (daysUntil !== 1 ? 's' : '') : 'overdue — will send on next open'}`;
 }
 
 function resetLastSent() {
@@ -1270,17 +1297,30 @@ function resetLastSent() {
 }
 
 function checkScheduledEmail() {
-  const interval = settings.emailInterval ?? 30;
+  const interval  = settings.emailInterval ?? 30;
   if (!settings.email || interval === 0) return;
-  if (!settings.emailLastSent) {
-    // Never sent — send on first load if there are items due
-    sendReminderEmail(false);
+
+  const now       = new Date();
+  const lastSent  = settings.emailLastSent;
+  const startDate = settings.emailStartDate;
+
+  if (!lastSent) {
+    // Never sent — check if start date has been reached
+    if (startDate) {
+      const start = new Date(startDate + 'T09:00:00');
+      if (now >= start) {
+        sendReminderEmail(false);
+      }
+      // else: start date not reached yet, do nothing
+    }
+    // No start date set — don't auto-send, wait for user to set one
     return;
   }
-  const last     = new Date(settings.emailLastSent);
-  const daysSince = (Date.now() - last.getTime()) / 86400000;
+
+  // Already sent before — check if interval has elapsed
+  const daysSince = (now - new Date(lastSent)) / 86400000;
   if (daysSince >= interval) {
-    sendReminderEmail(false); // silent auto-send
+    sendReminderEmail(false);
   }
 }
 
@@ -1405,6 +1445,8 @@ function renderAll() {
   if (emailEl) emailEl.value = settings.email || '';
   const intervalEl = document.getElementById('setting-email-interval');
   if (intervalEl) intervalEl.value = settings.emailInterval ?? 30;
+  const startEl = document.getElementById('setting-email-start');
+  if (startEl) startEl.value = settings.emailStartDate || '';
   updateLastSentUI();
 }
 
