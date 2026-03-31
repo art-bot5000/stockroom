@@ -395,12 +395,14 @@
       <p style="color:var(--muted);font-size:14px;line-height:1.7;margin-bottom:28px">Never run out of the essentials. Track household consumables, estimate your stock, and get reminded before you're empty.</p>
       <div class="wizard-features">
         <div class="wizard-feature"><div class="feat-icon">📊</div><h4>Stock Estimates</h4><p>See how much of each item you have left at a glance</p></div>
-        <div class="wizard-feature"><div class="feat-icon">🔔</div><h4>Monthly Reports</h4><p>Know what to reorder before you run out</p></div>
+        <div class="wizard-feature"><div class="feat-icon">🔔</div><h4>Email Reminders</h4><p>Know what to reorder before you run out</p></div>
         <div class="wizard-feature"><div class="feat-icon">🛒</div><h4>Price Checker</h4><p>Compare prices at your local stores instantly</p></div>
-        <div class="wizard-feature"><div class="feat-icon">☁️</div><h4>Google Drive Sync</h4><p>Your data syncs to your own Drive — access anywhere</p></div>
+        <div class="wizard-feature"><div class="feat-icon">☁️</div><h4>Cloud Sync</h4><p>Your data syncs to Drive or Dropbox — access anywhere</p></div>
       </div>
-      <button class="btn btn-blue btn-xl full" style="margin-bottom:10px" onclick="wizardConnectDrive()">☁️ Connect Google Drive &amp; Continue</button>
-      <button class="btn btn-ghost btn-xl full" onclick="wizardNext()">Continue without Drive →</button>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Sync your data so it's safe and available on all your devices:</p>
+      <button class="btn btn-blue btn-xl full" style="margin-bottom:10px" onclick="wizardConnectDrive()">☁️ Connect Google Drive</button>
+      <button class="btn btn-ghost btn-xl full" style="margin-bottom:10px;border-color:var(--border)" onclick="wizardConnectDropbox()">📦 Connect Dropbox</button>
+      <button class="btn btn-ghost btn-xl full" style="font-size:13px;opacity:0.7" onclick="wizardNext()">Continue without sync →</button>
     </div>
 
     <!-- Step 2: Country -->
@@ -1193,6 +1195,11 @@ function updateCountryConfirm() {
 function wizardConnectDrive() {
   localStorage.setItem('stockroom_wizard_step', '2');
   connectDrive(); // now redirects in same tab
+}
+
+function wizardConnectDropbox() {
+  localStorage.setItem('stockroom_wizard_step', '2');
+  connectDropbox(); // redirects in same tab, returns with token, then advances wizard
 }
 
 function wizardNext() {
@@ -3589,6 +3596,14 @@ function handleOAuthRedirect() {
     dropboxConnected = true;
     try { localStorage.setItem('stockroom_dropbox', JSON.stringify({ dropboxToken, dropboxConnected })); } catch(e){}
     updateSyncUI();
+
+    // If we came from the wizard, advance to country step
+    const wizardStep = localStorage.getItem('stockroom_wizard_step');
+    if (wizardStep === '2') {
+      localStorage.removeItem('stockroom_wizard_step');
+      wizardNext();
+    }
+
     syncDropbox().then(() => {
       try {
         const preAuthView = sessionStorage.getItem('stockroom_pre_auth_view');
@@ -3773,12 +3788,18 @@ async function uploadToDropbox(payload) {
 }
 
 function signOutDropbox() {
-  if (!confirm('Sign out of Dropbox? Your data stays on this device but won\'t sync until you reconnect.')) return;
+  if (!confirm('Sign out of Dropbox?\n\nYour data on Dropbox stays complete. Your local data on this device will remain unless you choose to clear it.')) return;
   dropboxToken     = null;
   dropboxConnected = false;
   try { localStorage.removeItem('stockroom_dropbox'); } catch(e){}
   updateSyncUI();
   toast('Signed out of Dropbox');
+  if (confirm('Clear local data on this device too?\n\nCloud data is unaffected — you can restore it by signing back in.')) {
+    items = [];
+    saveData();
+    renderAll();
+    toast('Local data cleared');
+  }
 }
 
 // ── Unified sync: tries whichever provider is connected ──
@@ -3826,13 +3847,19 @@ function updateDropboxUI() {
 }
 
 function signOutDrive() {
-  if (!confirm('Sign out of Google Drive? Your data will stay on this device but won\'t sync until you reconnect.')) return;
+  if (!confirm('Sign out of Google Drive?\n\nYour data on Drive stays complete. Your local data on this device will remain unless you choose to clear it.')) return;
   accessToken    = null;
   driveConnected = false;
   driveFileId    = null;
   try { localStorage.removeItem('stockroom_drive'); } catch(e) {}
   updateSyncUI();
   toast('Signed out of Google Drive');
+  if (confirm('Clear local data on this device too?\n\nCloud data is unaffected — you can restore it by signing back in.')) {
+    items = [];
+    saveData();
+    renderAll();
+    toast('Local data cleared');
+  }
 }
 
 function updateDriveUI() {
