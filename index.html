@@ -320,7 +320,32 @@
     .country-grid { grid-template-columns: 1fr; max-height: 260px; }
     .btn-xl { padding: 12px 20px; font-size: 14px; }
 
-    /* ── SHOPPING LIST ── */
+    /* ── SAVINGS ── */
+  .sns-banner { background:rgba(76,187,138,0.1); border:1px solid rgba(76,187,138,0.35); border-radius:10px; padding:14px 18px; margin-bottom:18px; display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap; cursor:pointer; transition:background 0.15s; }
+  .sns-banner:hover { background:rgba(76,187,138,0.16); }
+  .sns-banner-text { font-size:13px; line-height:1.5; }
+  .sns-banner-text strong { color:var(--ok); }
+  .sns-item { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:18px; margin-bottom:12px; transition:border-color 0.15s; }
+  .sns-item:hover { border-color:var(--muted); }
+  .sns-item-header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:10px; }
+  .sns-item-name { font-size:15px; font-weight:700; }
+  .sns-badge { font-size:11px; font-weight:700; font-family:var(--mono); padding:3px 9px; border-radius:99px; white-space:nowrap; }
+  .sns-badge-active   { background:rgba(76,187,138,0.15); color:var(--ok); }
+  .sns-badge-eligible { background:rgba(232,168,56,0.15); color:var(--warn); }
+  .sns-badge-tracking { background:rgba(91,141,238,0.15); color:var(--accent2); }
+  .sns-stats { display:flex; gap:16px; flex-wrap:wrap; margin-bottom:12px; }
+  .sns-stat { font-size:11px; color:var(--muted); }
+  .sns-stat strong { display:block; font-size:13px; font-weight:700; color:var(--text); font-family:var(--mono); }
+  .sns-saving { font-size:13px; color:var(--ok); font-weight:700; font-family:var(--mono); }
+  .sns-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+  .sns-summary-card { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:22px; margin-bottom:20px; display:flex; gap:24px; flex-wrap:wrap; align-items:center; }
+  .sns-summary-stat { text-align:center; }
+  .sns-summary-stat .val { font-size:28px; font-weight:700; font-family:var(--mono); color:var(--ok); }
+  .sns-summary-stat .lbl { font-size:11px; color:var(--muted); margin-top:2px; }
+  .sns-section-title { font-size:13px; font-family:var(--mono); letter-spacing:1px; text-transform:uppercase; color:var(--muted); margin:20px 0 10px; padding-bottom:8px; border-bottom:1px solid var(--border); }
+  .sns-empty { text-align:center; padding:60px 20px; color:var(--muted); }
+
+
     .shopping-item { grid-template-columns: 1fr; gap: 8px; }
     .shopping-checkbox { width: 24px; height: 24px; }
     .shopping-link { padding: 8px 12px; font-size: 13px; }
@@ -411,6 +436,7 @@
     <button class="tab active" onclick="showView('stock',this)">📦 Stock</button>
     <button class="tab" onclick="showView('report',this)">📋 Report</button>
     <button class="tab" onclick="showView('shopping',this)">🛍️ Shopping List</button>
+    <button class="tab" onclick="showView('savings',this)">💰 Savings</button>
     <button class="tab" onclick="showView('settings',this)">⚙️ Settings</button>
   </div>
 
@@ -459,7 +485,19 @@
         <span style="font-size:11px;color:var(--muted);font-family:var(--mono);letter-spacing:0.5px;text-transform:uppercase;flex-shrink:0">Tags:</span>
       </div>
     </div>
+    <div id="sns-banner" style="display:none"></div>
     <div id="items-grid"></div>
+  </div>
+
+  <!-- SAVINGS VIEW -->
+  <div class="view" id="view-savings">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;flex-wrap:wrap;gap:10px">
+      <div>
+        <h2 style="font-size:18px;font-weight:700">💰 Savings</h2>
+        <p style="font-size:12px;color:var(--muted);margin-top:3px">Amazon Subscribe &amp; Save opportunities based on your purchase history</p>
+      </div>
+    </div>
+    <div id="savings-content"></div>
   </div>
 
   <!-- REPORT VIEW -->
@@ -1076,10 +1114,39 @@ function loadData() {
 
 function saveData() {
   try {
-    // Guard: never save a non-array
     if (!Array.isArray(items)) { console.error('stockroom: items is not an array, aborting save'); return; }
     localStorage.setItem('stockroom_items', JSON.stringify(items));
   } catch(e) { console.warn('stockroom: could not save items', e); }
+}
+
+// Stamp updatedAt on an item whenever it's modified
+function touchItem(item) {
+  item.updatedAt = new Date().toISOString();
+}
+// Items only in one set are always kept.
+function mergeItems(local, remote) {
+  const merged = new Map();
+  // Index local items
+  for (const item of local) {
+    merged.set(item.id, item);
+  }
+  // Merge remote items
+  for (const remoteItem of remote) {
+    const localItem = merged.get(remoteItem.id);
+    if (!localItem) {
+      // Item only exists remotely — add it
+      merged.set(remoteItem.id, remoteItem);
+    } else {
+      // Both have it — keep whichever was updated more recently
+      const localTime  = localItem.updatedAt  ? new Date(localItem.updatedAt).getTime()  : 0;
+      const remoteTime = remoteItem.updatedAt ? new Date(remoteItem.updatedAt).getTime() : 0;
+      if (remoteTime > localTime) {
+        merged.set(remoteItem.id, remoteItem);
+      }
+      // else local wins (or equal — local wins)
+    }
+  }
+  return Array.from(merged.values());
 }
 function saveSettings() {
   settings.threshold      = parseInt(document.getElementById('setting-threshold').value);
@@ -1399,6 +1466,15 @@ async function sendReminderEmail(manual = true) {
   const urgent   = getItemsDueWithin(7);
   const upcoming = getItemsDueWithin(30).filter(i => i.daysLeft > 7);
 
+  // Build S&S savings summary for email
+  const snsAll      = analyseSnS();
+  const snsEligible = snsAll.filter(r => r.status === 'eligible');
+  const snsActive   = snsAll.filter(r => r.status === 'active');
+  const snsSaving   = [...snsEligible, ...snsActive].reduce((s,r) => s + (r.annualSaving||0), 0);
+  const snsPayload  = (snsEligible.length + snsActive.length) >= SNS_MIN_ITEMS
+    ? { eligible: snsEligible.map(r => ({ name: r.item.name, annualSaving: r.annualSaving, snsLink: getSnSLink(r.item) })), totalSaving: snsSaving }
+    : null;
+
   if (!urgent.length && !upcoming.length) {
     if (manual) toast('Nothing running out in the next 30 days — nothing to send!');
     return;
@@ -1415,7 +1491,7 @@ async function sendReminderEmail(manual = true) {
     const res = await fetch(`${WORKER_URL}/send-reminder`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ to: email, urgent, upcoming }),
+      body: JSON.stringify({ to: email, urgent, upcoming, sns: snsPayload }),
     });
     const data = await res.json();
     if (res.ok) {
@@ -1497,6 +1573,7 @@ function renderAll() {
   buildStoreFilterBar();
   buildTagFilterBar();
   buildShoppingTagFilterBarInline();
+  updateSnSBanner();
   renderGrid();
   // sync settings UI
   document.getElementById('setting-threshold').value = settings.threshold;
@@ -1698,6 +1775,7 @@ function toggleItemTag(itemId, tagIndex) {
   const idx = item.tags.indexOf(tagIndex);
   if (idx === -1) item.tags.push(tagIndex);
   else item.tags.splice(idx, 1);
+  touchItem(item);
   saveData();
   // Re-render just this card's tags without full grid re-render
   renderAll();
@@ -2275,6 +2353,7 @@ function rateItem(id, val) {
   const item = items.find(i => i.id === id);
   if (!item) return;
   item.rating = item.rating === val ? null : val;
+  touchItem(item);
   saveData();
   if (driveConnected) setTimeout(syncAll, 400);
   // Update stars in place — clear preview, set on
@@ -2518,6 +2597,228 @@ function saveStockCount() {
 }
 
 // ═══════════════════════════════════════════
+//  SUBSCRIBE & SAVE
+// ═══════════════════════════════════════════
+
+const SNS_DISCOUNT      = 0.05;  // 5% when 4+ items
+const SNS_MIN_PURCHASES = 3;     // need at least 3 purchases
+const SNS_MIN_SPAN_DAYS = 60;    // spanning at least 60 days
+const SNS_MIN_ITEMS     = 4;     // need 4+ to hit 5% tier
+
+function isAmazonStore(store) {
+  return store && /amazon/i.test(store);
+}
+
+function isAmazonUrl(url) {
+  return url && /amazon\./i.test(url);
+}
+
+function getSnSLink(item) {
+  // Deep link to Subscribe & Save on Amazon using the product URL
+  if (!item.url) return null;
+  try {
+    const u = new URL(item.url);
+    // Extract ASIN from Amazon URL
+    const asinMatch = item.url.match(/\/([A-Z0-9]{10})(?:[/?]|$)/);
+    if (!asinMatch) return item.url; // fallback to product page
+    const asin   = asinMatch[1];
+    const domain = u.hostname; // e.g. www.amazon.co.uk
+    return `https://${domain}/dp/${asin}?th=1&psc=1&subscribeSave=1`;
+  } catch(e) { return item.url; }
+}
+
+function analyseSnS() {
+  // Returns array of qualifying items with savings data
+  const results = [];
+
+  items.forEach(item => {
+    const isAmazon = isAmazonStore(item.store) || isAmazonUrl(item.url);
+    if (!isAmazon) return;
+
+    const logs = (item.logs || []).filter(l => l.date).sort((a,b) => new Date(a.date) - new Date(b.date));
+    if (logs.length < SNS_MIN_PURCHASES) {
+      // Tracking — not enough purchases yet
+      if (logs.length >= 1) {
+        results.push({ item, status: 'tracking', logs, purchaseCount: logs.length, spanDays: 0, avgMonthlySpend: null, annualSaving: null });
+      }
+      return;
+    }
+
+    const firstDate = new Date(logs[0].date + 'T12:00:00');
+    const lastDate  = new Date(logs[logs.length-1].date + 'T12:00:00');
+    const spanDays  = (lastDate - firstDate) / 86400000;
+
+    if (spanDays < SNS_MIN_SPAN_DAYS) {
+      results.push({ item, status: 'tracking', logs, purchaseCount: logs.length, spanDays, avgMonthlySpend: null, annualSaving: null });
+      return;
+    }
+
+    // Calculate avg monthly spend from price logs
+    const pricedLogs = logs.filter(l => parsePriceValue(l.price) !== null);
+    let avgMonthlySpend = null;
+    let annualSaving    = null;
+
+    if (pricedLogs.length >= 1) {
+      const avgPrice    = pricedLogs.reduce((s,l) => s + parsePriceValue(l.price), 0) / pricedLogs.length;
+      const monthsSpan  = spanDays / 30.5;
+      const buysPerMonth = logs.length / monthsSpan;
+      avgMonthlySpend   = avgPrice * buysPerMonth;
+      annualSaving      = avgMonthlySpend * 12 * SNS_DISCOUNT;
+    }
+
+    const status = item.subscribeAndSave ? 'active' : 'eligible';
+    results.push({ item, status, logs, purchaseCount: logs.length, spanDays: Math.round(spanDays), avgMonthlySpend, annualSaving });
+  });
+
+  return results;
+}
+
+function renderSavingsView() {
+  const all      = analyseSnS();
+  const active   = all.filter(r => r.status === 'active');
+  const eligible = all.filter(r => r.status === 'eligible');
+  const tracking = all.filter(r => r.status === 'tracking');
+  const qualifies = (active.length + eligible.length) >= SNS_MIN_ITEMS;
+
+  const totalAnnualSaving = [...active, ...eligible]
+    .reduce((s, r) => s + (r.annualSaving || 0), 0);
+  const activeAnnualSaving = active
+    .reduce((s, r) => s + (r.annualSaving || 0), 0);
+
+  let html = '';
+
+  if (!all.length) {
+    html = `<div class="sns-empty">
+      <div style="font-size:48px;margin-bottom:16px">🛒</div>
+      <h3 style="font-size:18px;color:var(--text);margin-bottom:8px">No Amazon purchases found</h3>
+      <p style="font-size:14px;line-height:1.7">Add items purchased from Amazon and log at least 3 purchases to see Subscribe &amp; Save opportunities.</p>
+    </div>`;
+    document.getElementById('savings-content').innerHTML = html;
+    return;
+  }
+
+  // Summary card
+  const qualifiesMsg = qualifies
+    ? `<span style="color:var(--ok);font-weight:700">✓ You qualify for 5% off</span> — you have ${active.length + eligible.length} eligible Amazon items.`
+    : `You need <strong>${SNS_MIN_ITEMS - (active.length + eligible.length)}</strong> more eligible item${(SNS_MIN_ITEMS - active.length - eligible.length) !== 1 ? 's' : ''} to reach the 5% discount tier.`;
+
+  html += `<div class="sns-summary-card">
+    ${totalAnnualSaving > 0 ? `<div class="sns-summary-stat"><div class="val">£${totalAnnualSaving.toFixed(2)}</div><div class="lbl">Est. annual saving</div></div>` : ''}
+    ${activeAnnualSaving > 0 ? `<div class="sns-summary-stat"><div class="val" style="color:var(--accent2)">£${activeAnnualSaving.toFixed(2)}</div><div class="lbl">Already saving/yr</div></div>` : ''}
+    <div class="sns-summary-stat"><div class="val" style="color:var(--warn)">${active.length + eligible.length}</div><div class="lbl">Eligible items</div></div>
+    <div class="sns-summary-stat"><div class="val" style="color:var(--muted)">${tracking.length}</div><div class="lbl">Being tracked</div></div>
+    <div style="flex:1;min-width:200px">
+      <p style="font-size:13px;line-height:1.6;color:var(--muted)">${qualifiesMsg}</p>
+      <p style="font-size:12px;color:var(--muted);margin-top:6px">Amazon Subscribe &amp; Save gives 5% off when you subscribe to 4+ products in a single delivery.</p>
+    </div>
+  </div>`;
+
+  const makeItem = (r) => {
+    const { item, status, purchaseCount, spanDays, avgMonthlySpend, annualSaving } = r;
+    const snsLink  = getSnSLink(item);
+    const lastPrice = (() => { const pl = (item.logs||[]).filter(l=>parsePriceValue(l.price)!==null); return pl.length ? pl[pl.length-1].price : null; })();
+
+    const badge = status === 'active'
+      ? `<span class="sns-badge sns-badge-active">✓ S&amp;S Active</span>`
+      : status === 'eligible'
+        ? `<span class="sns-badge sns-badge-eligible">💡 Eligible</span>`
+        : `<span class="sns-badge sns-badge-tracking">⏳ Tracking (${purchaseCount}/${SNS_MIN_PURCHASES} purchases)</span>`;
+
+    const savingEl = annualSaving
+      ? `<div class="sns-saving">£${annualSaving.toFixed(2)}/yr saving</div>`
+      : lastPrice
+        ? `<div style="font-size:12px;color:var(--muted)">Add prices to see £ saving</div>`
+        : `<div style="font-size:12px;color:var(--muted)">Log prices to calculate saving</div>`;
+
+    const toggleBtn = status !== 'tracking'
+      ? `<button class="btn btn-sm ${status === 'active' ? 'btn-ghost' : 'btn-primary'}" onclick="toggleSnS('${item.id}')">${status === 'active' ? 'Mark as not subscribed' : '✓ Mark as subscribed'}</button>`
+      : '';
+
+    const snsBuyBtn = snsLink && status !== 'active'
+      ? `<a href="${esc(snsLink)}" target="_blank" rel="noopener" class="btn btn-ghost btn-sm">🔗 Subscribe on Amazon</a>`
+      : '';
+
+    return `<div class="sns-item">
+      <div class="sns-item-header">
+        <div class="sns-item-name">${esc(item.name)}</div>
+        ${badge}
+      </div>
+      <div class="sns-stats">
+        <div class="sns-stat"><strong>${purchaseCount}</strong>purchases</div>
+        ${spanDays ? `<div class="sns-stat"><strong>${Math.round(spanDays/30.5 * 10)/10}mo</strong>over</div>` : ''}
+        ${lastPrice ? `<div class="sns-stat"><strong>${esc(lastPrice)}</strong>last price</div>` : ''}
+        ${avgMonthlySpend ? `<div class="sns-stat"><strong>£${avgMonthlySpend.toFixed(2)}</strong>/month avg spend</div>` : ''}
+      </div>
+      ${savingEl}
+      <div class="sns-actions">${toggleBtn}${snsBuyBtn}</div>
+    </div>`;
+  };
+
+  if (eligible.length) {
+    html += `<div class="sns-section-title">💡 Eligible — not yet subscribed (${eligible.length})</div>`;
+    html += eligible.map(makeItem).join('');
+  }
+  if (active.length) {
+    html += `<div class="sns-section-title">✓ Already subscribed (${active.length})</div>`;
+    html += active.map(makeItem).join('');
+  }
+  if (tracking.length) {
+    html += `<div class="sns-section-title">⏳ Building history (${tracking.length})</div>`;
+    html += tracking.map(makeItem).join('');
+  }
+
+  document.getElementById('savings-content').innerHTML = html;
+}
+
+function toggleSnS(id) {
+  const item = items.find(i => i.id === id);
+  if (!item) return;
+  item.subscribeAndSave = !item.subscribeAndSave;
+  saveData();
+  renderSavingsView();
+  updateSnSBanner();
+  toast(item.subscribeAndSave ? 'Marked as subscribed ✓' : 'Marked as not subscribed');
+  if (driveConnected || dropboxConnected) setTimeout(syncAll, 400);
+}
+
+function updateSnSBanner() {
+  const banner = document.getElementById('sns-banner');
+  if (!banner) return;
+  const all      = analyseSnS();
+  const eligible = all.filter(r => r.status === 'eligible');
+  const active   = all.filter(r => r.status === 'active');
+  const total    = eligible.length + active.length;
+
+  if (total < 1) { banner.style.display = 'none'; return; }
+
+  const qualifies = total >= SNS_MIN_ITEMS;
+  const totalSaving = [...eligible, ...active].reduce((s,r) => s + (r.annualSaving||0), 0);
+  const savingStr   = totalSaving > 0 ? ` — save <strong>£${totalSaving.toFixed(2)}/yr</strong>` : '';
+
+  if (qualifies) {
+    banner.innerHTML = `<div class="sns-banner" onclick="switchToSavings()">
+      <div class="sns-banner-text">💰 You qualify for <strong>Amazon Subscribe &amp; Save 5%</strong> on ${total} items${savingStr}</div>
+      <button class="btn btn-ghost btn-sm" style="flex-shrink:0">View savings →</button>
+    </div>`;
+  } else if (eligible.length > 0) {
+    const needed = SNS_MIN_ITEMS - total;
+    banner.innerHTML = `<div class="sns-banner" onclick="switchToSavings()">
+      <div class="sns-banner-text">💡 <strong>${total} Amazon item${total!==1?'s':''}</strong> could be on Subscribe &amp; Save — ${needed} more needed for 5% discount${savingStr}</div>
+      <button class="btn btn-ghost btn-sm" style="flex-shrink:0">View savings →</button>
+    </div>`;
+  } else {
+    banner.style.display = 'none';
+    return;
+  }
+  banner.style.display = 'block';
+}
+
+function switchToSavings() {
+  const tab = [...document.querySelectorAll('.tab')].find(t => t.textContent.includes('Savings'));
+  if (tab) showView('savings', tab);
+}
+
+// ═══════════════════════════════════════════
 //  SHOPPING LIST
 // ═══════════════════════════════════════════
 let shoppingStores = new Set(['__all__']);
@@ -2529,8 +2830,9 @@ function showView(name, btn) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.getElementById('view-'+name).classList.add('active');
   btn.classList.add('active');
-  if (name === 'report') renderReport();
+  if (name === 'report')   renderReport();
   if (name === 'shopping') renderShoppingList();
+  if (name === 'savings')  renderSavingsView();
 }
 
 function getShoppingItems() {
@@ -2948,6 +3250,7 @@ function saveItem() {
           item.logs = [{ id: uid(), date: lastDate, qty: lastQty, price: lastPrice, store: storeVal }];
         }
       }
+      touchItem(item);
     }
   } else {
     const lastDate  = document.getElementById('f-last-date').value;
@@ -2966,7 +3269,8 @@ function saveItem() {
       startedUsing,
       rating:       currentRating || null,
       imageUrl:     pendingImageUrl || null,
-      logs:         lastDate ? [{ id:uid(), date:lastDate, qty:lastQty, price:lastPrice, store:storeVal }] : []
+      logs:         lastDate ? [{ id:uid(), date:lastDate, qty:lastQty, price:lastPrice, store:storeVal }] : [],
+      updatedAt:    new Date().toISOString(),
     });
   }
   saveData();
@@ -2991,6 +3295,7 @@ function saveLog() {
   // Update startedUsing if a new date was provided
   const su = document.getElementById('log-started-using').value;
   if (su) item.startedUsing = su;
+  touchItem(item);
   saveData();
   closeModal('log-modal');
   renderAll();
@@ -3340,7 +3645,6 @@ async function syncNow() {
         const metaData = await meta.json();
         driveFileId = metaData.id;
         try { localStorage.setItem('stockroom_drive', JSON.stringify({ driveFileId, driveConnected })); } catch(e){}
-        // Upload current data to the newly created file
         await uploadToDrive(JSON.stringify({ items, settings, lastSynced: new Date().toISOString() }));
         updateSyncPill('synced');
         return;
@@ -3348,7 +3652,7 @@ async function syncNow() {
       try { localStorage.setItem('stockroom_drive', JSON.stringify({ driveFileId, driveConnected })); } catch(e){}
     }
 
-    // ── Step 2: Always load remote data and merge ──
+    // ── Step 2: Download remote and do a proper timestamp merge ──
     const fileRes = await fetch(
       `https://www.googleapis.com/drive/v3/files/${driveFileId}?alt=media`,
       { headers: { Authorization: 'Bearer ' + accessToken } }
@@ -3359,28 +3663,22 @@ async function syncNow() {
     try { remote = await fileRes.json(); } catch(e) {}
 
     if (remote && Array.isArray(remote.items)) {
-      const localIds = new Set(items.map(i => i.id));
-      // Remote items not in local → add them
-      const remoteOnly = remote.items.filter(i => !localIds.has(i.id));
-      if (remoteOnly.length > 0) {
-        items = [...items, ...remoteOnly];
-        saveData();
-      }
-      // Merge settings: local wins except for fields missing locally
+      items = mergeItems(items, remote.items);
+      saveData();
+
       if (remote.settings) {
-        const localTags = settings.customTags;
-        settings = { ...remote.settings, ...settings };
-        // Always prefer whichever customTags array has more defined tags
-        const remoteTags = remote.settings.customTags || [];
+        const localTags    = settings.customTags;
+        settings           = { ...remote.settings, ...settings };
+        const remoteTags   = remote.settings.customTags || [];
         const localDefined  = (localTags||[]).filter(t=>t&&t.trim()).length;
         const remoteDefined = remoteTags.filter(t=>t&&t.trim()).length;
         settings.customTags = localDefined >= remoteDefined ? (localTags||[]) : remoteTags;
         try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e){}
       }
-      if (remoteOnly.length > 0) renderAll();
+      renderAll();
     }
 
-    // ── Step 3: Upload merged data back to Drive ──
+    // ── Step 3: Upload merged data back ──
     await uploadToDrive(JSON.stringify({ items, settings, lastSynced: new Date().toISOString() }));
     updateSyncPill('synced');
 
@@ -3432,13 +3730,11 @@ async function syncDropbox() {
     });
 
     if (dlRes.ok) {
-      // File exists — merge
       let remote = null;
       try { remote = await dlRes.json(); } catch(e) {}
       if (remote && Array.isArray(remote.items)) {
-        const localIds  = new Set(items.map(i => i.id));
-        const remoteOnly = remote.items.filter(i => !localIds.has(i.id));
-        if (remoteOnly.length > 0) { items = [...items, ...remoteOnly]; saveData(); }
+        items = mergeItems(items, remote.items);
+        saveData();
         if (remote.settings) {
           const localTags    = settings.customTags;
           settings           = { ...remote.settings, ...settings };
@@ -3448,7 +3744,7 @@ async function syncDropbox() {
           settings.customTags = localDefined >= remoteDefined ? (localTags||[]) : remoteTags;
           try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e){}
         }
-        if (remoteOnly.length > 0) renderAll();
+        renderAll();
       }
     }
     // File doesn't exist (404) — will be created on upload
