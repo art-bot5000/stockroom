@@ -3916,6 +3916,18 @@ function updateSyncPill(state, provider) {
 function init() {
   loadData();
 
+  // ── Migration: stamp updatedAt on any item that doesn't have one ──
+  // Runs once — after this every item has a timestamp so merging works correctly
+  const now = new Date().toISOString();
+  let migrated = false;
+  items.forEach(item => {
+    if (!item.updatedAt) { item.updatedAt = now; migrated = true; }
+  });
+  if (migrated) {
+    saveData();
+    console.log(`Stamped updatedAt on ${items.filter(i=>i.updatedAt===now).length} legacy items`);
+  }
+
   // Restore Drive state
   try {
     const d = JSON.parse(localStorage.getItem('stockroom_drive')||'{}');
@@ -3944,14 +3956,15 @@ function init() {
   if (seen) {
     document.getElementById('wizard').style.display = 'none';
   } else if (wizardStep === '2' || driveConnected) {
-    // Resume at country step after Drive connect
     localStorage.removeItem('stockroom_wizard_step');
     wizardNext();
   }
 
   updateSyncUI();
   renderAll();
-  // Check if a scheduled reminder is due — runs after items are loaded
+  // Sync after migration so the stamped items reach the cloud immediately
+  if (migrated) setTimeout(syncAll, 1500);
+  // Check if a scheduled reminder is due
   setTimeout(checkScheduledEmail, 2000);
 }
 
