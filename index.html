@@ -3690,7 +3690,8 @@ function handleOAuthRedirect() {
   if (provider === 'dropbox') {
     dropboxToken     = token;
     dropboxConnected = true;
-    try { localStorage.setItem('stockroom_dropbox', JSON.stringify({ dropboxToken, dropboxConnected })); } catch(e){}
+    try { sessionStorage.setItem('stockroom_dropbox_token', token); } catch(e){}
+    try { localStorage.setItem('stockroom_dropbox', JSON.stringify({ dropboxConnected })); } catch(e){}
     updateSyncUI();
 
     // If we came from the wizard, advance to country step
@@ -3714,6 +3715,7 @@ function handleOAuthRedirect() {
     // Google Drive
     accessToken    = token;
     driveConnected = true;
+    try { sessionStorage.setItem('stockroom_access_token', token); } catch(e){}
     try { localStorage.setItem('stockroom_drive', JSON.stringify({ driveFileId, driveConnected })); } catch(e){}
     updateSyncUI();
     const wizardStep = localStorage.getItem('stockroom_wizard_step');
@@ -3732,7 +3734,12 @@ function handleOAuthRedirect() {
 }
 
 async function syncNow() {
-  if (!driveConnected || !accessToken) return;
+  if (!driveConnected) return;
+  if (!accessToken) {
+    // Token missing — try silent re-auth (no UI)
+    silentReAuth();
+    return;
+  }
   updateSyncPill('syncing');
   try {
     // ── Step 1: Find the Drive file if we don't have its ID yet ──
@@ -3802,8 +3809,27 @@ async function syncNow() {
 
   } catch(err) {
     console.error('Drive sync error:', err);
-    updateSyncPill('error');
+    // If we got a 401 the token has expired — get a fresh one silently
+    if (err.message.includes('401')) {
+      accessToken = null;
+      silentReAuth();
+    } else {
+      updateSyncPill('error');
+    }
   }
+}
+
+function silentReAuth() {
+  if (!driveConnected) return;
+  try { sessionStorage.setItem('stockroom_auth_provider', 'drive'); } catch(e){}
+  // prompt=none means Google won't show any UI — just returns a token if session is valid
+  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth`
+    + `?client_id=${CLIENT_ID}`
+    + `&redirect_uri=${encodeURIComponent(location.origin + location.pathname)}`
+    + `&response_type=token`
+    + `&scope=${encodeURIComponent(SCOPES)}`
+    + `&prompt=none`;
+  location.href = authUrl;
 }
 
 async function uploadToDrive(payload) {
@@ -4016,13 +4042,22 @@ function init() {
   // Restore Drive state
   try {
     const d = JSON.parse(localStorage.getItem('stockroom_drive')||'{}');
-    if (d.driveConnected) { driveConnected = true; driveFileId = d.driveFileId || null; }
+    if (d.driveConnected) {
+      driveConnected = true;
+      driveFileId    = d.driveFileId || null;
+      // Restore token from sessionStorage (survives refresh, not full close)
+      accessToken = sessionStorage.getItem('stockroom_access_token') || null;
+    }
   } catch(e){}
 
   // Restore Dropbox state
   try {
     const db = JSON.parse(localStorage.getItem('stockroom_dropbox')||'{}');
-    if (db.dropboxConnected) { dropboxConnected = true; dropboxToken = db.dropboxToken || null; }
+    if (db.dropboxConnected) {
+      dropboxConnected = true;
+      // Restore Dropbox token from sessionStorage
+      dropboxToken = sessionStorage.getItem('stockroom_dropbox_token') || null;
+    }
   } catch(e){}
 
   // Handle OAuth token in URL hash
@@ -4047,7 +4082,12 @@ function init() {
 
   updateSyncUI();
   renderAll();
-  // Sync after migration so the stamped items reach the cloud immediately
+  // Sync immediately on load to catch any changes made on other devices
+  setTimeout(() => {
+    lastAutoSync = Date.now();
+    checkCloudAhead();
+  }, 1500);
+  // Stamp legacy items and sync
   if (migrated) setTimeout(syncAll, 1500);
   // Check if a scheduled reminder is due
   setTimeout(checkScheduledEmail, 2000);
