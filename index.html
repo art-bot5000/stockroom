@@ -1125,27 +1125,38 @@ function saveData() {
 function touchItem(item) {
   item.updatedAt = new Date().toISOString();
 }
+
+// Merge two item arrays.
+// For each item id present in both sets:
+//   - If both have updatedAt: newest wins
+//   - If neither has updatedAt: remoteWins flag decides (based on which cloud file is newer)
+//   - If only one has updatedAt: that one wins
 // Items only in one set are always kept.
-function mergeItems(local, remote) {
+function mergeItems(local, remote, remoteWins = false) {
   const merged = new Map();
-  // Index local items
   for (const item of local) {
     merged.set(item.id, item);
   }
-  // Merge remote items
   for (const remoteItem of remote) {
     const localItem = merged.get(remoteItem.id);
     if (!localItem) {
-      // Item only exists remotely — add it
       merged.set(remoteItem.id, remoteItem);
     } else {
-      // Both have it — keep whichever was updated more recently
-      const localTime  = localItem.updatedAt  ? new Date(localItem.updatedAt).getTime()  : 0;
-      const remoteTime = remoteItem.updatedAt ? new Date(remoteItem.updatedAt).getTime() : 0;
-      if (remoteTime > localTime) {
+      const localTime  = localItem.updatedAt  ? new Date(localItem.updatedAt).getTime()  : null;
+      const remoteTime = remoteItem.updatedAt ? new Date(remoteItem.updatedAt).getTime() : null;
+
+      if (localTime !== null && remoteTime !== null) {
+        // Both stamped — newest wins
+        if (remoteTime > localTime) merged.set(remoteItem.id, remoteItem);
+      } else if (remoteTime !== null && localTime === null) {
+        // Only remote is stamped — remote wins
         merged.set(remoteItem.id, remoteItem);
+      } else if (localTime !== null && remoteTime === null) {
+        // Only local is stamped — local wins
+      } else {
+        // Neither stamped — use remoteWins flag from lastSynced comparison
+        if (remoteWins) merged.set(remoteItem.id, remoteItem);
       }
-      // else local wins (or equal — local wins)
     }
   }
   return Array.from(merged.values());
@@ -3678,7 +3689,12 @@ async function syncNow() {
     try { remote = await fileRes.json(); } catch(e) {}
 
     if (remote && Array.isArray(remote.items)) {
-      items = mergeItems(items, remote.items);
+      // Determine if remote file is newer overall (for items without updatedAt)
+      const localLastSynced  = settings.lastSynced ? new Date(settings.lastSynced).getTime() : 0;
+      const remoteLastSynced = remote.lastSynced   ? new Date(remote.lastSynced).getTime()   : 0;
+      const remoteWins       = remoteLastSynced > localLastSynced;
+
+      items = mergeItems(items, remote.items, remoteWins);
       saveData();
 
       if (remote.settings) {
@@ -3694,7 +3710,9 @@ async function syncNow() {
     }
 
     // ── Step 3: Upload merged data back ──
-    await uploadToDrive(JSON.stringify({ items, settings, lastSynced: new Date().toISOString() }));
+    settings.lastSynced = new Date().toISOString();
+    try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e){}
+    await uploadToDrive(JSON.stringify({ items, settings, lastSynced: settings.lastSynced }));
     updateSyncPill('synced');
 
   } catch(err) {
@@ -3733,8 +3751,6 @@ async function syncDropbox() {
   if (!dropboxConnected || !dropboxToken) return;
   updateSyncPill('syncing');
   try {
-    const payload = JSON.stringify({ items, settings, lastSynced: new Date().toISOString() });
-
     // Try to download existing file
     const dlRes = await fetch('https://content.dropboxapi.com/2/files/download', {
       method: 'POST',
@@ -3748,7 +3764,11 @@ async function syncDropbox() {
       let remote = null;
       try { remote = await dlRes.json(); } catch(e) {}
       if (remote && Array.isArray(remote.items)) {
-        items = mergeItems(items, remote.items);
+        const localLastSynced  = settings.lastSynced ? new Date(settings.lastSynced).getTime() : 0;
+        const remoteLastSynced = remote.lastSynced   ? new Date(remote.lastSynced).getTime()   : 0;
+        const remoteWins       = remoteLastSynced > localLastSynced;
+
+        items = mergeItems(items, remote.items, remoteWins);
         saveData();
         if (remote.settings) {
           const localTags    = settings.customTags;
@@ -3764,8 +3784,10 @@ async function syncDropbox() {
     }
     // File doesn't exist (404) — will be created on upload
 
-    // Upload merged data
-    await uploadToDropbox(payload);
+    // Stamp and upload merged data
+    settings.lastSynced = new Date().toISOString();
+    try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e){}
+    await uploadToDropbox(JSON.stringify({ items, settings, lastSynced: settings.lastSynced }));
     updateSyncPill('synced', 'dropbox');
 
   } catch(err) {
