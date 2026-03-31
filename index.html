@@ -432,6 +432,12 @@
   </div>
 </div>
 
+<!-- Sync update banner — shown when cloud is ahead of local -->
+<div id="sync-banner" style="display:none;background:rgba(91,141,238,0.12);border-bottom:1px solid rgba(91,141,238,0.3);padding:10px 20px;display:none;align-items:center;justify-content:space-between;gap:12px;font-size:13px">
+  <span>☁️ <strong>Newer data available</strong> — another device has made changes</span>
+  <button class="btn btn-blue btn-sm" onclick="syncNowAndDismissBanner()">Sync Now</button>
+</div>
+
 <!-- ═══ MAIN ═══ -->
 <div id="main">
   <div id="tabs">
@@ -1545,6 +1551,85 @@ async function sendReminderEmail(manual = true) {
   }
 }
 
+// ═══════════════════════════════════════════
+//  AUTO SYNC
+// ═══════════════════════════════════════════
+let lastAutoSync = 0;
+const AUTO_SYNC_COOLDOWN = 30000; // min 30s between auto-syncs
+
+// Sync when user switches back to the tab/app
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible') {
+    const now = Date.now();
+    if (now - lastAutoSync > AUTO_SYNC_COOLDOWN) {
+      lastAutoSync = now;
+      checkCloudAhead();
+    }
+  }
+});
+
+// Poll every 5 minutes as a backstop
+setInterval(() => {
+  if (document.visibilityState === 'visible') {
+    lastAutoSync = Date.now();
+    checkCloudAhead();
+  }
+}, 5 * 60 * 1000);
+
+// Check if cloud is ahead of local — if so, sync silently
+async function checkCloudAhead() {
+  if (!driveConnected && !dropboxConnected) return;
+  try {
+    let remoteModified = null;
+
+    if (driveConnected && accessToken && driveFileId) {
+      const res = await fetch(
+        `https://www.googleapis.com/drive/v3/files/${driveFileId}?fields=modifiedTime`,
+        { headers: { Authorization: 'Bearer ' + accessToken } }
+      );
+      if (res.ok) remoteModified = (await res.json()).modifiedTime;
+    } else if (dropboxConnected && dropboxToken) {
+      const res = await fetch('https://api.dropboxapi.com/2/files/get_metadata', {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${dropboxToken}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ path: DROPBOX_FILE }),
+      });
+      if (res.ok) remoteModified = (await res.json()).server_modified;
+    }
+
+    if (!remoteModified) return;
+
+    const remoteTime = new Date(remoteModified).getTime();
+    const localTime  = settings.lastSynced ? new Date(settings.lastSynced).getTime() : 0;
+
+    if (remoteTime > localTime + 5000) {
+      // Cloud is ahead — sync silently
+      await syncAll();
+      hideSyncBanner();
+    }
+  } catch(e) {
+    console.warn('Auto-sync check failed:', e.message);
+  }
+}
+
+function showSyncBanner() {
+  const b = document.getElementById('sync-banner');
+  if (b) b.style.display = 'flex';
+}
+
+function hideSyncBanner() {
+  const b = document.getElementById('sync-banner');
+  if (b) b.style.display = 'none';
+}
+
+async function syncNowAndDismissBanner() {
+  hideSyncBanner();
+  await syncAll();
+}
+
+// ═══════════════════════════════════════════
+//  FILTER PANEL TOGGLE
+// ═══════════════════════════════════════════
 let filtersOpen = false;
 
 function toggleFilters() {
