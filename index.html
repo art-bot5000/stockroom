@@ -236,6 +236,11 @@
   /* ── CARD NOTES ── */
   .card-notes { font-size:12px; color:var(--muted); font-style:italic; margin-bottom:8px; line-height:1.5; padding:6px 8px; background:var(--surface2); border-radius:6px; border-left:2px solid var(--border); }
 
+  /* ── INCOMPLETE ITEMS ── */
+  .incomplete-card { background:var(--surface); border:1px dashed rgba(232,168,56,0.4); border-radius:12px; padding:12px 14px; display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:8px; }
+  .incomplete-card .inc-name { font-size:14px; font-weight:600; color:var(--text); }
+  .incomplete-card .inc-meta { font-size:11px; color:var(--muted); margin-top:2px; font-family:var(--mono); }
+
   .card-image { width:100%;height:120px;object-fit:contain;border-radius:8px;background:var(--surface2);margin-bottom:12px;display:block; }
   .card-image-placeholder { width:100%;height:80px;display:flex;align-items:center;justify-content:center;font-size:36px;background:var(--surface2);border-radius:8px;margin-bottom:12px; }
   .img-preview-wrap { margin-top:10px;display:flex;align-items:center;gap:10px; }
@@ -459,19 +464,26 @@
 <!-- ═══ HEADER ═══ -->
 <div id="app-header">
   <div class="logo">STOCKROOM <span>/ HOUSEHOLD TRACKER</span></div>
-  <div style="display:flex;align-items:center;gap:10px">
+  <div style="display:flex;align-items:center;gap:8px">
     <div id="sync-pill" class="sync-pill pending">
       <div class="sync-dot"></div>
       <span id="sync-label">Local only</span>
     </div>
+    <button class="btn btn-ghost btn-sm" onclick="openQuickAdd()" title="Quick add multiple items">⚡</button>
     <button class="btn btn-primary btn-sm" onclick="openAddModal()">+ Add Item</button>
   </div>
 </div>
 
-<!-- Sync update banner — shown when cloud is ahead of local -->
+<!-- Sync update banner -->
 <div id="sync-banner" style="display:none;background:rgba(91,141,238,0.12);border-bottom:1px solid rgba(91,141,238,0.3);padding:10px 20px;display:none;align-items:center;justify-content:space-between;gap:12px;font-size:13px">
   <span>☁️ <strong>Newer data available</strong> — another device has made changes</span>
   <button class="btn btn-blue btn-sm" onclick="syncNowAndDismissBanner()">Sync Now</button>
+</div>
+
+<!-- Incomplete items nudge banner -->
+<div id="incomplete-banner" style="display:none;background:rgba(232,168,56,0.12);border-bottom:1px solid rgba(232,168,56,0.3);padding:10px 20px;align-items:center;justify-content:space-between;gap:12px;font-size:13px;cursor:pointer" onclick="scrollToIncomplete()">
+  <span>⚡ <strong id="incomplete-banner-text">Items need setting up</strong> — tap to complete them</span>
+  <button class="btn btn-sm" style="background:rgba(232,168,56,0.2);border:1px solid rgba(232,168,56,0.4);color:var(--accent);font-size:12px" onclick="event.stopPropagation();scrollToIncomplete()">View →</button>
 </div>
 
 <!-- ═══ MAIN ═══ -->
@@ -490,6 +502,20 @@
       <h2 style="font-size:18px;font-weight:700">Your Stockroom</h2>
       <span id="item-count" style="font-size:12px;color:var(--muted)">0 items</span>
     </div>
+
+    <!-- Incomplete items section -->
+    <div id="incomplete-section" style="display:none;margin-bottom:20px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:13px;font-weight:700;color:var(--accent)">⚡ Quick Added</span>
+          <span id="incomplete-count-badge" style="background:rgba(232,168,56,0.2);border:1px solid rgba(232,168,56,0.3);color:var(--accent);font-size:11px;font-weight:700;padding:1px 7px;border-radius:99px;font-family:var(--mono)"></span>
+        </div>
+        <span style="font-size:11px;color:var(--muted)">Tap ✏️ to complete setup</span>
+      </div>
+      <div id="incomplete-grid"></div>
+      <div style="border-bottom:1px solid var(--border);margin-bottom:16px;margin-top:4px"></div>
+    </div>
+
     <!-- Health dashboard -->
     <div id="health-dashboard" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px"></div>
     <div style="margin-bottom:18px">
@@ -1010,6 +1036,38 @@
         <button class="btn btn-ghost" onclick="closeModal('item-modal')">Cancel</button>
         <button class="btn btn-primary" onclick="saveItem()">Save Item</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ QUICK ADD MODAL ═══ -->
+<div class="modal-backdrop" id="quick-add-modal">
+  <div class="modal" style="max-width:480px">
+    <h2>⚡ Quick Add</h2>
+    <p class="subtitle">Type item names separated by commas, or scan barcodes one at a time. You can complete the details later.</p>
+
+    <div style="position:relative;margin-bottom:12px">
+      <textarea id="quick-add-input"
+        placeholder="Coffee beans, Toilet roll, Washing powder, Shampoo..."
+        style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:10px 12px;color:var(--text);font-family:var(--sans);font-size:14px;outline:none;resize:vertical;min-height:90px;line-height:1.6"
+        oninput="updateQuickAddPreview()"></textarea>
+    </div>
+
+    <!-- Barcode scan row -->
+    <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">
+      <button class="btn btn-ghost btn-sm" onclick="quickAddBarcodeScan()">📷 Scan barcode</button>
+      <span style="font-size:12px;color:var(--muted)">Scanned items are added to the list above</span>
+    </div>
+
+    <!-- Preview chips -->
+    <div id="quick-add-preview" style="display:none;margin-bottom:16px">
+      <div style="font-size:11px;color:var(--muted);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Will add:</div>
+      <div id="quick-add-chips" style="display:flex;flex-wrap:wrap;gap:6px"></div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('quick-add-modal')">Cancel</button>
+      <button class="btn btn-primary" id="quick-add-save-btn" onclick="saveQuickAdd()">⚡ Add Items</button>
     </div>
   </div>
 </div>
@@ -1810,41 +1868,66 @@ function closeBarcodeScanner() {
 
 async function lookupBarcode(barcode) {
   const statusEl = document.getElementById('barcode-status');
+  const isQuickAdd = sessionStorage.getItem('barcode_target') === 'quick-add';
+
   try {
+    let productName = null;
+    let imageUrl    = null;
+
     // Try Open Food Facts first
-    let res = await fetch(`https://world.openfoodfacts.org/api/v0/product/${barcode}.json`);
+    let res  = await fetch(`https://world.openfoodfacts.org/api/v0/product/${barcode}.json`);
     let data = await res.json();
     if (data.status === 1 && data.product?.product_name) {
-      const p = data.product;
-      closeBarcodeScanner();
-      document.getElementById('f-name').value     = p.product_name || '';
-      document.getElementById('f-category').value = 'Food & Drink';
-      if (p.image_url) {
-        pendingImageUrl = p.image_url;
-        showImagePreview(p.image_url, 'Image found via barcode');
-      }
-      toast('Product found ✓');
-      return;
+      productName = data.product.product_name;
+      imageUrl    = data.product.image_url || null;
     }
+
     // Try Open Beauty Facts
-    res = await fetch(`https://world.openbeautyfacts.org/api/v0/product/${barcode}.json`);
-    data = await res.json();
-    if (data.status === 1 && data.product?.product_name) {
-      const p = data.product;
-      closeBarcodeScanner();
-      document.getElementById('f-name').value = p.product_name || '';
-      if (p.image_url) { pendingImageUrl = p.image_url; showImagePreview(p.image_url, 'Image found via barcode'); }
-      toast('Product found ✓');
-      return;
+    if (!productName) {
+      res  = await fetch(`https://world.openbeautyfacts.org/api/v0/product/${barcode}.json`);
+      data = await res.json();
+      if (data.status === 1 && data.product?.product_name) {
+        productName = data.product.product_name;
+        imageUrl    = data.product.image_url || null;
+      }
     }
-    statusEl.textContent = `Barcode ${barcode} not found — you can enter the name manually.`;
-    setTimeout(() => {
-      closeBarcodeScanner();
-      document.getElementById('f-name').focus();
-    }, 2000);
+
+    closeBarcodeScanner();
+    sessionStorage.removeItem('barcode_target');
+
+    if (productName) {
+      if (isQuickAdd) {
+        // Append to quick-add textarea
+        const ta  = document.getElementById('quick-add-input');
+        const cur = ta.value.trim();
+        ta.value  = cur ? cur + ', ' + productName : productName;
+        updateQuickAddPreview();
+        toast(`Found: ${productName}`);
+        openModal('quick-add-modal');
+      } else {
+        document.getElementById('f-name').value     = productName;
+        document.getElementById('f-category').value = 'Food & Drink';
+        if (imageUrl) { pendingImageUrl = imageUrl; showImagePreview(imageUrl, 'Image found via barcode'); }
+        toast('Product found ✓');
+      }
+    } else {
+      if (isQuickAdd) {
+        // Use barcode as name fallback
+        const ta  = document.getElementById('quick-add-input');
+        const cur = ta.value.trim();
+        ta.value  = cur ? cur + ', ' + barcode : barcode;
+        updateQuickAddPreview();
+        toast(`Barcode ${barcode} added — rename it later`);
+        openModal('quick-add-modal');
+      } else {
+        document.getElementById('f-name').focus();
+        toast(`Barcode not found — enter name manually`);
+      }
+    }
   } catch(e) {
-    statusEl.textContent = 'Lookup failed — check your connection.';
-    setTimeout(closeBarcodeScanner, 2000);
+    sessionStorage.removeItem('barcode_target');
+    closeBarcodeScanner();
+    toast('Lookup failed — check your connection');
   }
 }
 
@@ -1929,6 +2012,146 @@ function renderTempStorePrices() {
     </div>`).join('');
 }
 
+
+// ═══════════════════════════════════════════
+//  QUICK ADD
+// ═══════════════════════════════════════════
+function openQuickAdd() {
+  document.getElementById('quick-add-input').value = '';
+  document.getElementById('quick-add-preview').style.display = 'none';
+  document.getElementById('quick-add-chips').innerHTML = '';
+  openModal('quick-add-modal');
+  setTimeout(() => document.getElementById('quick-add-input').focus(), 100);
+}
+
+function parseQuickAddNames() {
+  const raw = document.getElementById('quick-add-input').value;
+  return raw.split(',')
+    .map(s => s.trim())
+    .filter(s => s.length > 0);
+}
+
+function updateQuickAddPreview() {
+  const names   = parseQuickAddNames();
+  const preview = document.getElementById('quick-add-preview');
+  const chips   = document.getElementById('quick-add-chips');
+  const btn     = document.getElementById('quick-add-save-btn');
+  if (!names.length) {
+    preview.style.display = 'none';
+    return;
+  }
+  preview.style.display = 'block';
+  chips.innerHTML = names.map(n =>
+    `<span style="display:inline-flex;align-items:center;gap:5px;padding:4px 10px;background:var(--surface2);border:1px solid var(--border);border-radius:99px;font-size:12px;color:var(--text)">
+      📦 ${esc(n)}
+    </span>`
+  ).join('');
+  btn.textContent = `⚡ Add ${names.length} Item${names.length !== 1 ? 's' : ''}`;
+}
+
+function saveQuickAdd() {
+  const names = parseQuickAddNames();
+  if (!names.length) { toast('Enter at least one item name'); return; }
+
+  const now = new Date().toISOString();
+  names.forEach(name => {
+    items.push({
+      id:          uid(),
+      name,
+      category:    'Other',
+      cadence:     'monthly',
+      qty:         1,
+      months:      1,
+      url:         '',
+      store:       '',
+      notes:       '',
+      rating:      null,
+      imageUrl:    null,
+      logs:        [],
+      storePrices: [],
+      quickAdded:  true,   // ← flag for incomplete tracking
+      updatedAt:   now,
+    });
+  });
+
+  saveData();
+  closeModal('quick-add-modal');
+  renderAll();
+  setTimeout(syncAll, 400);
+  toast(`${names.length} item${names.length !== 1 ? 's' : ''} added — complete their details when ready`);
+}
+
+// Called from barcode scanner in quick-add context
+function quickAddBarcodeScan() {
+  // Temporarily redirect barcode result to the quick-add textarea
+  sessionStorage.setItem('barcode_target', 'quick-add');
+  openBarcodeScanner();
+}
+
+// Override lookupBarcode to handle quick-add context
+const _originalLookupBarcode = window.lookupBarcode;
+
+function getQuickAddItems() {
+  return items.filter(i => i.quickAdded);
+}
+
+function renderIncompleteSection() {
+  const incomplete = getQuickAddItems();
+  const section    = document.getElementById('incomplete-section');
+  const grid       = document.getElementById('incomplete-grid');
+  const badge      = document.getElementById('incomplete-count-badge');
+  const banner     = document.getElementById('incomplete-banner');
+  const bannerText = document.getElementById('incomplete-banner-text');
+
+  if (!incomplete.length) {
+    if (section) section.style.display = 'none';
+    if (banner)  banner.style.display  = 'none';
+    return;
+  }
+
+  // Show banner
+  if (banner) {
+    banner.style.display = 'flex';
+    if (bannerText) bannerText.textContent = `${incomplete.length} item${incomplete.length !== 1 ? 's' : ''} need setting up`;
+  }
+
+  // Show section on stock view
+  if (section) {
+    section.style.display = 'block';
+    if (badge) badge.textContent = incomplete.length;
+  }
+
+  if (grid) {
+    grid.innerHTML = incomplete.map(item => `
+      <div class="incomplete-card">
+        <div>
+          <div class="inc-name">${esc(item.name)}</div>
+          <div class="inc-meta">⚡ Quick added · no details yet</div>
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          <button class="btn-icon" title="Complete setup" onclick="openEditModal('${item.id}');enableItemEdit()">✏️</button>
+          <button class="btn-icon" title="Remove" onclick="deleteItem('${item.id}')">🗑️</button>
+        </div>
+      </div>`).join('');
+  }
+}
+
+function scrollToIncomplete() {
+  // Switch to stock tab if not there
+  const stockTab = [...document.querySelectorAll('.tab')].find(t => t.textContent.includes('Stock'));
+  if (stockTab && !stockTab.classList.contains('active')) showView('stock', stockTab);
+  // Scroll to section
+  setTimeout(() => {
+    const section = document.getElementById('incomplete-section');
+    if (section) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }, 100);
+}
+
+// When an item is saved via the full edit form, clear quickAdded flag
+function clearQuickAddedFlag(id) {
+  const item = items.find(i => i.id === id);
+  if (item) item.quickAdded = false;
+}
 
 function renderHealthDashboard() {
   const el = document.getElementById('health-dashboard');
@@ -2418,6 +2641,7 @@ function renderAll() {
   buildTagFilterBar();
   buildShoppingTagFilterBarInline();
   renderHealthDashboard();
+  renderIncompleteSection();
   updateSnSBanner();
   renderGrid();
   // sync settings UI
@@ -2445,6 +2669,8 @@ function renderGrid() {
   }
 
   let filtered = items.filter(item => {
+    // Quick-added items live in their own section
+    if (item.quickAdded) return false;
     const s = calcStock(item);
     const status = getStatus(s?.pct ?? null, threshold);
 
@@ -4269,6 +4495,7 @@ function saveItem() {
   }
   saveData();
   closeModal('item-modal');
+  if (editingId) clearQuickAddedFlag(editingId);
   renderAll();
   toast('Item saved ✓');
   if (driveConnected) setTimeout(syncAll, 400);
