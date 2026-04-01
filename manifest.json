@@ -35,6 +35,20 @@
       "description": "Log a purchase for an existing item",
       "url": "./?action=log-purchase",
       "icons": [{ "src": "icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Shopping List",
+      "short_name": "Shopping List",
+      "description": "View items running low",
+      "url": "./?action=shopping",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Scan Barcode",
+      "short_name": "Scan",
+      "description": "Scan a product barcode to add or log an item",
+      "url": "./?action=scan",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192", "type": "image/png" }]
     }
   ],
   "share_target": {

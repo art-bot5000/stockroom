@@ -1046,6 +1046,23 @@
   </div>
 </div>
 
+<!-- ═══ SCAN CHOOSER MODAL ═══ -->
+<div class="modal-backdrop" id="scan-chooser-modal">
+  <div class="modal" style="max-width:380px;text-align:center">
+    <div style="font-size:36px;margin-bottom:8px">📷</div>
+    <h2 id="scan-chooser-name" style="font-size:17px;margin-bottom:6px;word-break:break-word"></h2>
+    <p class="subtitle" style="margin-bottom:24px">What would you like to do?</p>
+    <div style="display:flex;flex-direction:column;gap:10px">
+      <button class="btn btn-primary btn-xl full" onclick="scanChooserQuickAdd()">⚡ Quick Add this item</button>
+      <button class="btn btn-ghost btn-xl full" onclick="scanChooserLogPurchase()">📋 Log a purchase for an existing item</button>
+      <button class="btn btn-ghost btn-xl full" onclick="scanChooserFullAdd()">✏️ Add as new item with full details</button>
+    </div>
+    <div class="modal-footer" style="margin-top:20px;justify-content:center">
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('scan-chooser-modal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- ═══ LOG PURCHASE PICKER MODAL ═══ -->
 <div class="modal-backdrop" id="log-picker-modal">
   <div class="modal" style="max-width:440px">
@@ -1889,7 +1906,8 @@ function closeBarcodeScanner() {
 
 async function lookupBarcode(barcode) {
   const statusEl = document.getElementById('barcode-status');
-  const isQuickAdd = sessionStorage.getItem('barcode_target') === 'quick-add';
+  const isQuickAdd   = sessionStorage.getItem('barcode_target') === 'quick-add';
+  const isScanChooser = sessionStorage.getItem('barcode_target') === 'scan-chooser';
 
   try {
     let productName = null;
@@ -1917,7 +1935,10 @@ async function lookupBarcode(barcode) {
     sessionStorage.removeItem('barcode_target');
 
     if (productName) {
-      if (isQuickAdd) {
+      if (isScanChooser) {
+        // Ask what to do with the scanned item
+        openScanChooser(productName, imageUrl);
+      } else if (isQuickAdd) {
         // Append to quick-add textarea
         const ta  = document.getElementById('quick-add-input');
         const cur = ta.value.trim();
@@ -1932,7 +1953,9 @@ async function lookupBarcode(barcode) {
         toast('Product found ✓');
       }
     } else {
-      if (isQuickAdd) {
+      if (isScanChooser) {
+        openScanChooser(barcode, null);
+      } else if (isQuickAdd) {
         // Use barcode as name fallback
         const ta  = document.getElementById('quick-add-input');
         const cur = ta.value.trim();
@@ -2035,8 +2058,45 @@ function renderTempStorePrices() {
 
 
 // ═══════════════════════════════════════════
-//  DEEP LINKS & SHARE TARGET
+//  SCAN CHOOSER
 // ═══════════════════════════════════════════
+let scannedProductName  = '';
+let scannedProductImage = null;
+
+function openScanChooser(name, imageUrl) {
+  scannedProductName  = name;
+  scannedProductImage = imageUrl;
+  const nameEl = document.getElementById('scan-chooser-name');
+  if (nameEl) nameEl.textContent = name;
+  openModal('scan-chooser-modal');
+}
+
+function scanChooserQuickAdd() {
+  closeModal('scan-chooser-modal');
+  openQuickAdd();
+  const ta = document.getElementById('quick-add-input');
+  if (ta) { ta.value = scannedProductName; updateQuickAddPreview(); }
+}
+
+function scanChooserLogPurchase() {
+  closeModal('scan-chooser-modal');
+  openLogPicker();
+  // Pre-fill the search so likely matches show first
+  const search = document.getElementById('log-picker-search');
+  if (search) { search.value = scannedProductName; filterLogPicker(scannedProductName); }
+}
+
+function scanChooserFullAdd() {
+  closeModal('scan-chooser-modal');
+  openAddModal();
+  document.getElementById('f-name').value = scannedProductName;
+  if (scannedProductImage) {
+    pendingImageUrl = scannedProductImage;
+    showImagePreview(scannedProductImage, 'Image found via barcode');
+  }
+}
+
+
 function handleURLAction() {
   const params = new URLSearchParams(location.search);
   const action = params.get('action');
@@ -2051,6 +2111,12 @@ function handleURLAction() {
       openQuickAdd();
     } else if (action === 'log-purchase') {
       openLogPicker();
+    } else if (action === 'shopping') {
+      const tab = [...document.querySelectorAll('.tab')].find(t => t.textContent.includes('Shopping'));
+      if (tab) showView('shopping', tab);
+    } else if (action === 'scan') {
+      sessionStorage.setItem('barcode_target', 'scan-chooser');
+      openBarcodeScanner();
     } else if (action === 'share') {
       // Share target — pre-fill quick add with shared text/title
       const title = params.get('title') || '';
@@ -2062,7 +2128,6 @@ function handleURLAction() {
         const ta = document.getElementById('quick-add-input');
         if (ta) { ta.value = name; updateQuickAddPreview(); }
       }
-      // If a URL was shared, pre-fill the item URL field too
       if (url) sessionStorage.setItem('shared_url', url);
     }
   }, 600);
