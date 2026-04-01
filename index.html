@@ -450,7 +450,7 @@
   </div>
 </div>
 
-<!-- PWA Install Banner -->
+<!-- PWA Install Banner — Android (shown via beforeinstallprompt) -->
 <div id="install-banner">
   <div class="install-icon">📦</div>
   <div class="install-text">
@@ -459,6 +459,23 @@
   </div>
   <button class="btn btn-primary btn-sm" onclick="installPWA()">Install</button>
   <button class="btn btn-ghost btn-sm" onclick="dismissInstallBanner()">✕</button>
+</div>
+
+<!-- PWA Install Banner — iOS (shown manually since beforeinstallprompt doesn't fire) -->
+<div id="ios-install-banner" style="display:none;background:var(--surface);border-bottom:1px solid var(--border);padding:14px 20px;gap:12px;box-shadow:0 2px 8px rgba(0,0,0,0.2)">
+  <div style="display:flex;align-items:flex-start;gap:12px">
+    <div style="font-size:26px;flex-shrink:0">📦</div>
+    <div style="flex:1;min-width:0">
+      <div style="font-size:14px;font-weight:700;margin-bottom:4px">Add STOCKROOM to your home screen</div>
+      <div style="font-size:12px;color:var(--muted);line-height:1.6">
+        Tap <strong style="color:var(--text)">Share</strong> 
+        <span style="font-size:15px">⎙</span> at the bottom of Safari, then
+        <strong style="color:var(--text)">Add to Home Screen</strong>. 
+        Required for push notifications on iPhone.
+      </div>
+    </div>
+    <button class="btn btn-ghost btn-sm" style="flex-shrink:0" onclick="dismissIOSBanner()">✕</button>
+  </div>
 </div>
 
 <!-- ═══ HEADER ═══ -->
@@ -713,7 +730,7 @@
 
     <div class="settings-card">
       <h3>🔔 Push Notifications</h3>
-      <p style="font-size:12px;color:var(--muted);margin-bottom:14px">Get notified on this device when items are running low — no email needed. Works best when installed to your home screen.</p>
+      <p id="notif-platform-note" style="font-size:12px;color:var(--muted);margin-bottom:14px">Get notified on this device when items are running low — no email needed.</p>
       <div class="setting-row">
         <div class="setting-info">
           <h4>Low stock alerts</h4>
@@ -731,8 +748,11 @@
         </select>
       </div>
       <div class="setting-row" id="install-prompt-row" style="display:none">
-        <div class="setting-info"><h4>Install to home screen</h4><p>Required for background notifications on Android</p></div>
-        <button class="btn btn-blue btn-sm" onclick="installPWA()">Install App</button>
+        <div class="setting-info" id="install-prompt-info">
+          <h4>Install to home screen</h4>
+          <p>Required for background notifications</p>
+        </div>
+        <button id="install-prompt-btn" class="btn btn-blue btn-sm" onclick="installPWA()">Install App</button>
       </div>
     </div>
 
@@ -2433,20 +2453,20 @@ function quickLogFromShopping(itemId) {
 // ═══════════════════════════════════════════
 let deferredInstallPrompt = null;
 
+// ── iOS detection ─────────────────────────
+const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent) ||
+  (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
+const isInStandaloneMode = window.matchMedia('(display-mode: standalone)').matches
+  || window.navigator.standalone === true;
+const isAndroid = /android/i.test(navigator.userAgent);
+
 if ('serviceWorker' in navigator) {
   const isDeployed = location.hostname.includes('github.io') || location.hostname.includes('artbot5000');
   if (isDeployed) {
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('./sw.js').then(reg => {
-        // Check for updates on load
         reg.update();
-
-        // New SW waiting — show refresh banner
-        if (reg.waiting) {
-          showUpdateBanner(reg.waiting);
-        }
-
-        // SW installed after page load
+        if (reg.waiting) showUpdateBanner(reg.waiting);
         reg.addEventListener('updatefound', () => {
           const newWorker = reg.installing;
           newWorker.addEventListener('statechange', () => {
@@ -2457,34 +2477,34 @@ if ('serviceWorker' in navigator) {
         });
       }).catch(e => console.warn('SW failed:', e));
 
-      // When the new SW takes control, reload
       let refreshing = false;
       navigator.serviceWorker.addEventListener('controllerchange', () => {
         if (!refreshing) { refreshing = true; location.reload(); }
       });
     });
+
+    // Show iOS install banner if on iOS, not installed, and not dismissed
+    if (isIOS && !isInStandaloneMode && !localStorage.getItem('stockroom_ios_banner_dismissed')) {
+      setTimeout(() => {
+        const banner = document.getElementById('ios-install-banner');
+        if (banner) banner.style.display = 'block';
+      }, 3000);
+    }
   }
 }
 
 function showUpdateBanner(worker) {
   const banner = document.getElementById('update-banner');
-  if (banner) {
-    banner.style.display = 'flex';
-    // Store worker reference so we can activate it on tap
-    banner._worker = worker;
-  }
+  if (banner) { banner.style.display = 'flex'; banner._worker = worker; }
 }
 
 function applyUpdate() {
   const banner = document.getElementById('update-banner');
-  if (banner?._worker) {
-    banner._worker.postMessage({ type: 'SKIP_WAITING' });
-  } else {
-    // Fallback — hard reload bypassing cache
-    location.reload(true);
-  }
+  if (banner?._worker) banner._worker.postMessage({ type: 'SKIP_WAITING' });
+  else location.reload(true);
 }
 
+// Android install prompt
 window.addEventListener('beforeinstallprompt', e => {
   e.preventDefault();
   deferredInstallPrompt = e;
@@ -2502,10 +2522,18 @@ window.addEventListener('appinstalled', () => {
   deferredInstallPrompt = null;
   const banner = document.getElementById('install-banner');
   if (banner) banner.classList.remove('show');
+  const iosBanner = document.getElementById('ios-install-banner');
+  if (iosBanner) iosBanner.style.display = 'none';
   toast('STOCKROOM installed ✓');
 });
 
 async function installPWA() {
+  if (isIOS) {
+    // Can't prompt on iOS — show the iOS banner instead
+    const banner = document.getElementById('ios-install-banner');
+    if (banner) { banner.style.display = 'block'; banner.scrollIntoView({ behavior: 'smooth' }); }
+    return;
+  }
   if (!deferredInstallPrompt) {
     toast('Use "Add to Home Screen" from your browser menu');
     return;
@@ -2523,6 +2551,12 @@ function dismissInstallBanner() {
   try { localStorage.setItem('stockroom_install_dismissed', '1'); } catch(e){}
 }
 
+function dismissIOSBanner() {
+  const banner = document.getElementById('ios-install-banner');
+  if (banner) banner.style.display = 'none';
+  try { localStorage.setItem('stockroom_ios_banner_dismissed', '1'); } catch(e){}
+}
+
 // ═══════════════════════════════════════════
 //  PUSH NOTIFICATIONS
 // ═══════════════════════════════════════════
@@ -2535,6 +2569,19 @@ function loadNotifSettings() {
     const daysEl = document.getElementById('notif-days');
     if (daysEl && saved.days) daysEl.value = saved.days;
   } catch(e){}
+  // Set platform-specific description
+  const note = document.getElementById('notif-platform-note');
+  if (note) {
+    if (isIOS && !isInStandaloneMode) {
+      note.innerHTML = 'Push notifications on iPhone require the app to be <strong style="color:var(--text)">installed to your home screen</strong> via Safari. Once installed, notifications work like a native app.';
+      note.style.color = 'var(--warn)';
+    } else if (isIOS && isInStandaloneMode) {
+      note.textContent = 'Running as installed app — notifications are fully supported on your iPhone.';
+      note.style.color = 'var(--ok)';
+    } else {
+      note.textContent = 'Get notified when items are running low — no email needed. Works best when installed to your home screen.';
+    }
+  }
   updateNotifUI();
 }
 
@@ -2550,9 +2597,26 @@ function updateNotifUI() {
   const statusText = document.getElementById('notif-status-text');
   const threshRow  = document.getElementById('notif-threshold-row');
   const installRow = document.getElementById('install-prompt-row');
+  const installInfo = document.getElementById('install-prompt-info');
+  const installBtn  = document.getElementById('install-prompt-btn');
   if (!btn || !statusText) return;
 
   const permission = 'Notification' in window ? Notification.permission : 'unsupported';
+
+  // iOS not installed — notifications won't work, show install prompt instead
+  if (isIOS && !isInStandaloneMode) {
+    statusText.textContent = 'Requires home screen install on iPhone';
+    statusText.style.color = 'var(--warn)';
+    btn.style.display = 'none';
+    if (installRow) installRow.style.display = 'flex';
+    if (installInfo) installInfo.innerHTML = '<h4>Add to Home Screen first</h4><p>iOS only supports notifications when installed via Safari → Share → Add to Home Screen</p>';
+    if (installBtn) { installBtn.textContent = 'How to install'; installBtn.onclick = () => {
+      const banner = document.getElementById('ios-install-banner');
+      if (banner) { banner.style.display = 'block'; banner.scrollIntoView({ behavior: 'smooth' }); }
+    }; }
+    if (threshRow) threshRow.style.display = 'none';
+    return;
+  }
 
   if (permission === 'unsupported') {
     statusText.textContent = 'Not supported on this browser';
@@ -2560,24 +2624,29 @@ function updateNotifUI() {
     return;
   }
   if (permission === 'denied') {
-    statusText.textContent = 'Blocked — enable in browser settings';
+    statusText.textContent = 'Blocked — enable notifications in browser/phone settings';
     statusText.style.color = 'var(--danger)';
     btn.style.display = 'none';
     return;
   }
   if (notifEnabled && permission === 'granted') {
-    statusText.textContent = 'Active — you\'ll be alerted when items run low';
+    statusText.textContent = isIOS
+      ? 'Active — you\'ll be alerted when items run low'
+      : 'Active — you\'ll be alerted when items run low';
     statusText.style.color = 'var(--ok)';
     btn.textContent = 'Disable';
-    btn.className = 'btn btn-danger btn-sm';
-    if (threshRow) threshRow.style.display = 'flex';
-    if (installRow) installRow.style.display = deferredInstallPrompt ? 'flex' : 'none';
+    btn.className   = 'btn btn-danger btn-sm';
+    btn.style.display = 'inline-flex';
+    if (threshRow)  threshRow.style.display  = 'flex';
+    if (installRow) installRow.style.display = (!isIOS && deferredInstallPrompt) ? 'flex' : 'none';
   } else {
     statusText.textContent = 'Not enabled';
     statusText.style.color = 'var(--muted)';
-    btn.textContent = 'Enable';
-    btn.className = 'btn btn-ghost btn-sm';
-    if (threshRow) threshRow.style.display = 'none';
+    btn.textContent   = 'Enable';
+    btn.className     = 'btn btn-ghost btn-sm';
+    btn.style.display = 'inline-flex';
+    if (threshRow)  threshRow.style.display  = 'none';
+    if (installRow) installRow.style.display = (!isIOS && deferredInstallPrompt) ? 'flex' : 'none';
   }
 }
 
@@ -4839,13 +4908,17 @@ function buildSettingsCountrySelect() {
 //  GOOGLE DRIVE SYNC
 // ═══════════════════════════════════════════
 function connectDrive() {
-  // Store current scroll position and view so we can restore after redirect
   try { sessionStorage.setItem('stockroom_pre_auth_view', 'settings'); } catch(e){}
+  try { sessionStorage.setItem('stockroom_auth_provider', 'drive'); } catch(e){}
+
+  // Use code flow (not implicit) so Worker can get a refresh token for cron
+  const redirectUri = `${WORKER_URL}/auth/google`;
   const authUrl = `https://accounts.google.com/o/oauth2/v2/auth`
     + `?client_id=${CLIENT_ID}`
-    + `&redirect_uri=${encodeURIComponent(location.origin + location.pathname)}`
-    + `&response_type=token`
+    + `&redirect_uri=${encodeURIComponent(redirectUri)}`
+    + `&response_type=code`
     + `&scope=${encodeURIComponent(SCOPES)}`
+    + `&access_type=offline`
     + `&prompt=consent`;
   location.href = authUrl;
 }
@@ -5019,15 +5092,49 @@ async function sendEmailNow() {
 }
 
 function handleOAuthRedirect() {
-  const hash = window.location.hash;
-  if (!hash.includes('access_token')) return;
-  const params = new URLSearchParams(hash.slice(1));
-  const token  = params.get('access_token');
-  if (!token) return;
+  const qParams = new URLSearchParams(location.search);
+  const hParams = new URLSearchParams(window.location.hash.slice(1));
 
+  // ── Google Drive code flow (returns via query string from Worker) ──
+  const driveAuth = qParams.get('drive_auth');
+  if (driveAuth) {
+    history.replaceState(null, '', location.pathname);
+    if (driveAuth === 'success') {
+      fetch(`${WORKER_URL}/auth/token`)
+        .then(r => r.json())
+        .then(data => {
+          if (data.access_token) {
+            accessToken    = data.access_token;
+            driveConnected = true;
+            try { sessionStorage.setItem('stockroom_access_token', data.access_token); } catch(e){}
+            try { localStorage.setItem('stockroom_drive', JSON.stringify({ driveFileId, driveConnected })); } catch(e){}
+            updateSyncUI();
+            const wizardStep = localStorage.getItem('stockroom_wizard_step');
+            if (wizardStep === '2') { localStorage.removeItem('stockroom_wizard_step'); wizardNext(); }
+            syncNow().then(() => {
+              try {
+                const preAuthView = sessionStorage.getItem('stockroom_pre_auth_view');
+                sessionStorage.removeItem('stockroom_pre_auth_view');
+                if (preAuthView === 'settings') {
+                  const tab = [...document.querySelectorAll('.tab')].find(t => t.textContent.includes('Settings'));
+                  if (tab) showView('settings', tab);
+                }
+              } catch(e){}
+            });
+          }
+        })
+        .catch(e => { console.error('Token fetch failed:', e); toast('Drive connection failed — try again'); });
+    } else {
+      toast(`Drive connection failed: ${qParams.get('reason') || 'unknown'}`);
+    }
+    return;
+  }
+
+  // ── Dropbox implicit flow (returns via hash) ──
+  const token = hParams.get('access_token');
+  if (!token) return;
   history.replaceState(null, '', location.pathname);
 
-  // Detect which provider returned the token
   const provider = sessionStorage.getItem('stockroom_auth_provider') || 'drive';
   sessionStorage.removeItem('stockroom_auth_provider');
 
@@ -5037,40 +5144,15 @@ function handleOAuthRedirect() {
     try { sessionStorage.setItem('stockroom_dropbox_token', token); } catch(e){}
     try { localStorage.setItem('stockroom_dropbox', JSON.stringify({ dropboxConnected })); } catch(e){}
     updateSyncUI();
-
-    // If we came from the wizard, advance to country step
     const wizardStep = localStorage.getItem('stockroom_wizard_step');
-    if (wizardStep === '2') {
-      localStorage.removeItem('stockroom_wizard_step');
-      wizardNext();
-    }
-
+    if (wizardStep === '2') { localStorage.removeItem('stockroom_wizard_step'); wizardNext(); }
     syncDropbox().then(() => {
       try {
         const preAuthView = sessionStorage.getItem('stockroom_pre_auth_view');
         sessionStorage.removeItem('stockroom_pre_auth_view');
         if (preAuthView === 'settings') {
-          const settingsTab = [...document.querySelectorAll('.tab')].find(t => t.textContent.includes('Settings'));
-          if (settingsTab) showView('settings', settingsTab);
-        }
-      } catch(e){}
-    });
-  } else {
-    // Google Drive
-    accessToken    = token;
-    driveConnected = true;
-    try { sessionStorage.setItem('stockroom_access_token', token); } catch(e){}
-    try { localStorage.setItem('stockroom_drive', JSON.stringify({ driveFileId, driveConnected })); } catch(e){}
-    updateSyncUI();
-    const wizardStep = localStorage.getItem('stockroom_wizard_step');
-    if (wizardStep === '2') { localStorage.removeItem('stockroom_wizard_step'); wizardNext(); }
-    syncNow().then(() => {
-      try {
-        const preAuthView = sessionStorage.getItem('stockroom_pre_auth_view');
-        sessionStorage.removeItem('stockroom_pre_auth_view');
-        if (preAuthView === 'settings') {
-          const settingsTab = [...document.querySelectorAll('.tab')].find(t => t.textContent.includes('Settings'));
-          if (settingsTab) showView('settings', settingsTab);
+          const tab = [...document.querySelectorAll('.tab')].find(t => t.textContent.includes('Settings'));
+          if (tab) showView('settings', tab);
         }
       } catch(e){}
     });
@@ -5165,15 +5247,13 @@ async function syncNow() {
 
 function silentReAuth() {
   if (!driveConnected) return;
-  try { sessionStorage.setItem('stockroom_auth_provider', 'drive'); } catch(e){}
-  // prompt=none means Google won't show any UI — just returns a token if session is valid
-  const authUrl = `https://accounts.google.com/o/oauth2/v2/auth`
-    + `?client_id=${CLIENT_ID}`
-    + `&redirect_uri=${encodeURIComponent(location.origin + location.pathname)}`
-    + `&response_type=token`
-    + `&scope=${encodeURIComponent(SCOPES)}`
-    + `&prompt=none`;
-  location.href = authUrl;
+  // Can't do silent re-auth with code flow — just reconnect normally
+  // Show a subtle indicator rather than redirecting without warning
+  updateSyncPill('error');
+  const label = document.getElementById('sync-label');
+  if (label) label.textContent = 'Re-auth needed';
+  // Show a toast nudging the user to reconnect
+  toast('Drive session expired — reconnect in Settings');
 }
 
 async function uploadToDrive(payload) {
