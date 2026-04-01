@@ -21,6 +21,31 @@
       "purpose": "any maskable"
     }
   ],
+  "shortcuts": [
+    {
+      "name": "Quick Add",
+      "short_name": "Quick Add",
+      "description": "Quickly add one or more items by name",
+      "url": "./?action=quick-add",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    },
+    {
+      "name": "Log Purchase",
+      "short_name": "Log Purchase",
+      "description": "Log a purchase for an existing item",
+      "url": "./?action=log-purchase",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192", "type": "image/png" }]
+    }
+  ],
+  "share_target": {
+    "action": "./?action=share",
+    "method": "GET",
+    "params": {
+      "title": "title",
+      "text":  "text",
+      "url":   "url"
+    }
+  },
   "categories": ["lifestyle", "utilities"],
   "screenshots": []
 }
