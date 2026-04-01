@@ -474,6 +474,12 @@
   </div>
 </div>
 
+<!-- App update banner -->
+<div id="update-banner" style="display:none;background:rgba(76,187,138,0.12);border-bottom:1px solid rgba(76,187,138,0.3);padding:10px 20px;align-items:center;justify-content:space-between;gap:12px;font-size:13px">
+  <span>✨ <strong>Update available</strong> — a new version of STOCKROOM is ready</span>
+  <button class="btn btn-sm" style="background:rgba(76,187,138,0.2);border:1px solid rgba(76,187,138,0.4);color:var(--ok);font-size:12px;white-space:nowrap" onclick="applyUpdate()">Refresh now</button>
+</div>
+
 <!-- Sync update banner -->
 <div id="sync-banner" style="display:none;background:rgba(91,141,238,0.12);border-bottom:1px solid rgba(91,141,238,0.3);padding:10px 20px;display:none;align-items:center;justify-content:space-between;gap:12px;font-size:13px">
   <span>☁️ <strong>Newer data available</strong> — another device has made changes</span>
@@ -2257,12 +2263,54 @@ function quickLogFromShopping(itemId) {
 let deferredInstallPrompt = null;
 
 if ('serviceWorker' in navigator) {
-  // Only register SW when deployed — not in Claude preview or localhost without sw.js
   const isDeployed = location.hostname.includes('github.io') || location.hostname.includes('artbot5000');
   if (isDeployed) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js').catch(e => console.warn('SW failed:', e));
+      navigator.serviceWorker.register('./sw.js').then(reg => {
+        // Check for updates on load
+        reg.update();
+
+        // New SW waiting — show refresh banner
+        if (reg.waiting) {
+          showUpdateBanner(reg.waiting);
+        }
+
+        // SW installed after page load
+        reg.addEventListener('updatefound', () => {
+          const newWorker = reg.installing;
+          newWorker.addEventListener('statechange', () => {
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              showUpdateBanner(newWorker);
+            }
+          });
+        });
+      }).catch(e => console.warn('SW failed:', e));
+
+      // When the new SW takes control, reload
+      let refreshing = false;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (!refreshing) { refreshing = true; location.reload(); }
+      });
     });
+  }
+}
+
+function showUpdateBanner(worker) {
+  const banner = document.getElementById('update-banner');
+  if (banner) {
+    banner.style.display = 'flex';
+    // Store worker reference so we can activate it on tap
+    banner._worker = worker;
+  }
+}
+
+function applyUpdate() {
+  const banner = document.getElementById('update-banner');
+  if (banner?._worker) {
+    banner._worker.postMessage({ type: 'SKIP_WAITING' });
+  } else {
+    // Fallback — hard reload bypassing cache
+    location.reload(true);
   }
 }
 

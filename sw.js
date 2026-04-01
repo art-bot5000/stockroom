@@ -1,6 +1,8 @@
-const CACHE_NAME = 'stockroom-v1';
+// ── INCREMENT THIS VERSION NUMBER EVERY TIME YOU DEPLOY ──────
+// The browser detects a change in this file and triggers the update flow
+const CACHE_VERSION = 'stockroom-v2';
+const CACHE_NAME    = CACHE_VERSION;
 
-// Files to cache for offline use
 const CACHE_URLS = [
   './',
   './index.html',
@@ -12,54 +14,64 @@ self.addEventListener('install', event => {
   event.waitUntil(
     caches.open(CACHE_NAME).then(cache => {
       return cache.addAll(CACHE_URLS).catch(e => {
-        console.warn('SW cache failed for some files:', e);
+        console.warn('SW: cache failed for some files:', e);
       });
     })
   );
-  self.skipWaiting();
+  // Don't auto-activate — wait for the app to send SKIP_WAITING
+  // so the user can choose when to refresh
 });
 
 // ── Activate: clean up old caches ────────────────────────────
 self.addEventListener('activate', event => {
   event.waitUntil(
     caches.keys().then(keys =>
-      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => caches.delete(k)))
+      Promise.all(keys.filter(k => k !== CACHE_NAME).map(k => {
+        console.log('SW: removing old cache', k);
+        return caches.delete(k);
+      }))
     )
   );
   self.clients.claim();
 });
 
-// ── Fetch: serve from cache, fall back to network ────────────
+// ── Message: handle SKIP_WAITING from the app ────────────────
+self.addEventListener('message', event => {
+  if (event.data?.type === 'SKIP_WAITING') {
+    self.skipWaiting();
+  }
+});
+
+// ── Fetch: cache-first for app shell, network-first for APIs ─
 self.addEventListener('fetch', event => {
-  // Only handle same-origin and CDN font requests
-  const url = new URL(event.request.url);
   if (event.request.method !== 'GET') return;
 
-  // Network-first for API calls (Drive, Dropbox, Worker)
+  const url = new URL(event.request.url);
+
+  // Let API calls go straight to the network
   if (
-    url.hostname.includes('googleapis.com') ||
-    url.hostname.includes('dropboxapi.com') ||
-    url.hostname.includes('dropbox.com') ||
-    url.hostname.includes('workers.dev') ||
-    url.hostname.includes('resend.com') ||
+    url.hostname.includes('googleapis.com')    ||
+    url.hostname.includes('dropboxapi.com')    ||
+    url.hostname.includes('dropbox.com')       ||
+    url.hostname.includes('workers.dev')       ||
+    url.hostname.includes('resend.com')        ||
     url.hostname.includes('openfoodfacts.org') ||
     url.hostname.includes('openbeautyfacts.org')
   ) {
-    return; // let browser handle API requests normally
+    return;
   }
 
   // Cache-first for app shell
   event.respondWith(
     caches.match(event.request).then(cached => {
-      return cached || fetch(event.request).then(response => {
-        // Cache successful same-origin responses
+      if (cached) return cached;
+      return fetch(event.request).then(response => {
         if (response.ok && url.origin === self.location.origin) {
           const clone = response.clone();
           caches.open(CACHE_NAME).then(cache => cache.put(event.request, clone));
         }
         return response;
       }).catch(() => {
-        // Offline fallback for navigation
         if (event.request.mode === 'navigate') {
           return caches.match('./index.html');
         }
@@ -68,20 +80,18 @@ self.addEventListener('fetch', event => {
   );
 });
 
-// ── Notification click: open the app ─────────────────────────
+// ── Notification click: focus or open app ────────────────────
 self.addEventListener('notificationclick', event => {
   event.notification.close();
-  const url = event.notification.data?.url || './';
+  const targetUrl = event.notification.data?.url || './';
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {
-      // Focus existing window if open
       for (const client of clientList) {
         if (client.url.includes('stockroom') && 'focus' in client) {
           return client.focus();
         }
       }
-      // Otherwise open new window
-      if (clients.openWindow) return clients.openWindow(url);
+      if (clients.openWindow) return clients.openWindow(targetUrl);
     })
   );
 });
