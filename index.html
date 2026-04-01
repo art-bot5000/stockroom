@@ -4,6 +4,12 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>STOCKROOM — Household Consumables Tracker</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#0f1117">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="STOCKROOM">
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -16,6 +22,14 @@
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; }
+
+  /* ── PWA INSTALL BANNER ── */
+  #install-banner { display:none; position:fixed; bottom:0; left:0; right:0; z-index:997; background:var(--surface); border-top:1px solid var(--border); padding:14px 20px; align-items:center; gap:12px; box-shadow:0 -4px 20px rgba(0,0,0,0.3); }
+  #install-banner.show { display:flex; }
+  .install-icon { font-size:28px; flex-shrink:0; }
+  .install-text { flex:1; min-width:0; }
+  .install-text strong { display:block; font-size:14px; margin-bottom:2px; }
+  .install-text span { font-size:12px; color:var(--muted); }
 
   /* ── HEADER ── */
   #app-header {
@@ -62,10 +76,10 @@
 
   .item-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px; position: relative; transition: border-color 0.15s; }
   .item-card:hover { border-color: var(--muted); }
-  .card-top { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; }
-  .card-category { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 3px; }
-  .card-name { font-size: 16px; font-weight: 700; line-height: 1.2; }
-  .card-btns { display: flex; gap: 5px; }
+  .card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
+  .card-category { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
+  .card-name { font-size: 16px; font-weight: 700; line-height: 1.25; }
+  .card-btns { display: flex; gap: 5px; flex-shrink: 0; }
 
   .stock-bar-wrap { margin-bottom: 12px; }
   .stock-bar-label { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); font-family: var(--mono); margin-bottom: 4px; }
@@ -210,6 +224,17 @@
   .btn-add-tag:hover { border-color:var(--accent); color:var(--accent); }
   .tag-inline-input { font-size:12px; font-weight:600; padding:4px 10px; border-radius:99px; border:1px solid var(--accent); background:var(--bg); color:var(--text); font-family:var(--sans); outline:none; width:110px; }
 
+
+  /* ── SWIPE TO LOG ── */
+  .item-card { position:relative; overflow:hidden; touch-action:pan-y; }
+  .swipe-hint { position:absolute; left:0; top:0; bottom:0; width:64px; background:linear-gradient(90deg,rgba(76,187,138,0.3),transparent); display:flex; align-items:center; justify-content:flex-start; padding-left:14px; opacity:0; pointer-events:none; border-radius:inherit; font-size:22px; transition:opacity 0.1s; }
+
+  /* ── UNDO TOAST ── */
+  #undo-toast { position:fixed; bottom:24px; left:50%; transform:translateX(-50%) translateY(100px); background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:12px 16px; display:flex; align-items:center; gap:12px; font-size:13px; z-index:999; box-shadow:0 4px 20px rgba(0,0,0,0.35); transition:transform 0.3s cubic-bezier(0.34,1.56,0.64,1); white-space:nowrap; }
+  #undo-toast.show { transform:translateX(-50%) translateY(0); }
+
+  /* ── CARD NOTES ── */
+  .card-notes { font-size:12px; color:var(--muted); font-style:italic; margin-bottom:8px; line-height:1.5; padding:6px 8px; background:var(--surface2); border-radius:6px; border-left:2px solid var(--border); }
 
   .card-image { width:100%;height:120px;object-fit:contain;border-radius:8px;background:var(--surface2);margin-bottom:12px;display:block; }
   .card-image-placeholder { width:100%;height:80px;display:flex;align-items:center;justify-content:center;font-size:36px;background:var(--surface2);border-radius:8px;margin-bottom:12px; }
@@ -420,6 +445,17 @@
   </div>
 </div>
 
+<!-- PWA Install Banner -->
+<div id="install-banner">
+  <div class="install-icon">📦</div>
+  <div class="install-text">
+    <strong>Add STOCKROOM to your home screen</strong>
+    <span>Get quick access and low-stock notifications</span>
+  </div>
+  <button class="btn btn-primary btn-sm" onclick="installPWA()">Install</button>
+  <button class="btn btn-ghost btn-sm" onclick="dismissInstallBanner()">✕</button>
+</div>
+
 <!-- ═══ HEADER ═══ -->
 <div id="app-header">
   <div class="logo">STOCKROOM <span>/ HOUSEHOLD TRACKER</span></div>
@@ -450,16 +486,27 @@
 
   <!-- STOCK VIEW -->
   <div class="view active" id="view-stock">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
       <h2 style="font-size:18px;font-weight:700">Your Stockroom</h2>
       <span id="item-count" style="font-size:12px;color:var(--muted)">0 items</span>
     </div>
+    <!-- Health dashboard -->
+    <div id="health-dashboard" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px"></div>
     <div style="margin-bottom:18px">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap">
         <button class="btn btn-ghost btn-sm" id="filter-toggle-btn" onclick="toggleFilters()" style="display:flex;align-items:center;gap:6px">
           <span id="filter-toggle-icon">▸</span> Filters
           <span id="filter-active-badge" style="display:none;background:var(--accent);color:#111;font-size:10px;font-weight:700;padding:1px 6px;border-radius:99px;font-family:var(--mono)"></span>
         </button>
+        <select id="sort-select" onchange="setSort(this.value)"
+          style="font-size:12px;background:var(--surface);border:1px solid var(--border);color:var(--muted);border-radius:6px;padding:5px 24px 5px 8px;font-family:var(--sans);cursor:pointer;outline:none">
+          <option value="status">↕ Sort: Status</option>
+          <option value="name">↕ Sort: Name</option>
+          <option value="days">↕ Sort: Days left</option>
+          <option value="lastbought">↕ Sort: Last bought</option>
+          <option value="rating">↕ Sort: Rating</option>
+          <option value="added">↕ Sort: Date added</option>
+        </select>
       </div>
 
       <div id="filter-panel" style="display:none;flex-direction:column;gap:8px;margin-bottom:10px;padding:12px;background:var(--surface);border:1px solid var(--border);border-radius:10px">
@@ -516,9 +563,15 @@
         <div id="report-date" style="font-size:12px;color:var(--muted);font-family:var(--mono);margin-top:3px"></div>
       </div>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" onclick="toggleSpendView()" id="spend-toggle-btn">💷 Monthly Spend</button>
         <button class="btn btn-ghost btn-sm" onclick="emailReport()">📧 Email Report</button>
         <button class="btn btn-ghost btn-sm" onclick="exportReport()">⬇ Export</button>
       </div>
+    </div>
+    <div id="spend-section" style="display:none;margin-bottom:28px">
+      <h3 style="font-size:15px;font-weight:700;margin-bottom:16px">💷 Monthly Spend</h3>
+      <div id="spend-chart" style="margin-bottom:12px"></div>
+      <div id="spend-breakdown"></div>
     </div>
     <div id="report-content"></div>
   </div>
@@ -627,6 +680,31 @@
     </div>
 
     <div class="settings-card">
+      <h3>🔔 Push Notifications</h3>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:14px">Get notified on this device when items are running low — no email needed. Works best when installed to your home screen.</p>
+      <div class="setting-row">
+        <div class="setting-info">
+          <h4>Low stock alerts</h4>
+          <p id="notif-status-text">Not enabled</p>
+        </div>
+        <button id="notif-btn" class="btn btn-ghost btn-sm" onclick="toggleNotifications()">Enable</button>
+      </div>
+      <div class="setting-row" id="notif-threshold-row" style="display:none">
+        <div class="setting-info"><h4>Alert when items are within</h4></div>
+        <select id="notif-days" onchange="saveNotifSettings()"
+          style="width:110px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 28px 6px 8px;font-family:var(--sans);font-size:13px">
+          <option value="7">7 days</option>
+          <option value="14" selected>14 days</option>
+          <option value="30">30 days</option>
+        </select>
+      </div>
+      <div class="setting-row" id="install-prompt-row" style="display:none">
+        <div class="setting-info"><h4>Install to home screen</h4><p>Required for background notifications on Android</p></div>
+        <button class="btn btn-blue btn-sm" onclick="installPWA()">Install App</button>
+      </div>
+    </div>
+
+    <div class="settings-card">
       <h3>⚙️ Preferences</h3>
       <div class="setting-row">
         <div class="setting-info"><h4>Low stock warning</h4><p>Warn when stock drops below this %</p></div>
@@ -730,6 +808,36 @@
   </div>
 </div>
 
+<!-- ═══ TEMPLATES MODAL ═══ -->
+<div class="modal-backdrop" id="templates-modal">
+  <div class="modal" style="max-width:480px">
+    <h2>📋 Starter Templates</h2>
+    <p class="subtitle">Tap any item to pre-fill the form. You can edit before saving.</p>
+    <div id="templates-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;max-height:420px;overflow-y:auto"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('templates-modal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ BARCODE SCANNER MODAL ═══ -->
+<div class="modal-backdrop" id="barcode-modal">
+  <div class="modal" style="max-width:420px">
+    <h2>📷 Scan Barcode</h2>
+    <p class="subtitle">Point your camera at the product barcode.</p>
+    <div id="barcode-video-wrap" style="position:relative;border-radius:10px;overflow:hidden;background:#000;margin-bottom:12px;aspect-ratio:4/3">
+      <video id="barcode-video" autoplay playsinline muted style="width:100%;display:block"></video>
+      <div style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none">
+        <div style="width:60%;height:2px;background:rgba(232,168,56,0.8);box-shadow:0 0 12px rgba(232,168,56,0.6)"></div>
+      </div>
+    </div>
+    <div id="barcode-status" style="font-size:13px;color:var(--muted);text-align:center;margin-bottom:12px">Searching for barcode…</div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeBarcodeScanner()">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- ═══ PRICE HISTORY MODAL ═══ -->
 <div class="modal-backdrop" id="price-history-modal">
   <div class="modal" style="max-width:500px">
@@ -793,80 +901,115 @@
   <div class="modal">
     <h2 id="item-modal-title">Add Item</h2>
     <p class="subtitle" id="item-modal-subtitle">Track a new consumable in your stockroom.</p>
-    <div class="form-grid">
-      <div class="field form-full"><label>Item Name *</label><input type="text" id="f-name" placeholder="e.g. Coffee Beans (1kg)"></div>
-      <div class="field"><label>Category</label>
-        <select id="f-category">
-          <option>Kitchen</option><option>Bathroom</option><option>Cleaning</option>
-          <option>Food &amp; Drink</option><option>Health</option><option>Garden</option>
-          <option>Office</option><option>Other</option>
-        </select>
-      </div>
-      <div class="field"><label>Purchase Cadence</label>
-        <select id="f-cadence">
-          <option value="monthly">Monthly supply</option>
-          <option value="bulk">Bulk (multi-month)</option>
-        </select>
-      </div>
-      <div class="field"><label>Units per purchase</label><input type="number" id="f-qty" min="0.1" step="0.1" value="1"></div>
-      <div class="field"><label>Months supply / purchase</label><input type="number" id="f-months" min="0.5" step="0.5" value="1"></div>
-      <div class="field form-full">
-        <label>Product URL</label>
-        <div style="display:flex;gap:8px;align-items:center">
-          <input type="url" id="f-url" placeholder="https://amazon.co.uk/..." oninput="autoFillStore()" style="flex:1">
-          <button type="button" class="btn btn-ghost btn-sm" onclick="fetchProductImage()" id="fetch-img-btn" title="Search for product image by name">🖼 Find Image</button>
+
+    <!-- Read-only summary — shown in edit mode only -->
+    <div id="item-readonly-view" style="display:none;margin-bottom:16px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;padding:14px;background:var(--surface2);border-radius:10px;border:1px solid var(--border)">
+        <div style="flex:1;min-width:0">
+          <div id="ro-category" style="font-size:11px;color:var(--muted);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:3px"></div>
+          <div id="ro-name" style="font-size:18px;font-weight:700;color:var(--text);margin-bottom:6px;word-break:break-word"></div>
+          <div id="ro-meta" style="font-size:12px;color:var(--muted);line-height:1.8"></div>
+          <div id="ro-store" style="font-size:12px;color:var(--muted);margin-top:2px"></div>
         </div>
-        <div class="img-preview-wrap" id="img-preview-wrap" style="display:none">
-          <img id="img-preview" class="img-preview" src="" alt="Product image">
-          <div>
-            <div id="img-preview-status" style="font-size:12px;color:var(--ok);margin-bottom:4px"></div>
-            <button type="button" onclick="clearProductImage()" style="font-size:11px;color:var(--muted);background:none;border:none;cursor:pointer;text-decoration:underline;padding:0">Remove image</button>
-          </div>
-        </div>
+        <button class="btn btn-blue btn-sm" style="flex-shrink:0" onclick="enableItemEdit()">✏️ Edit</button>
       </div>
-      <div class="field form-full">
-        <label>Store name <span style="font-weight:400;color:var(--muted)">(auto-detected from URL, or enter manually for offline stores)</span></label>
-        <input type="text" id="f-store" placeholder="e.g. Costco, Waitrose, Local Pharmacy..." oninput="this.dataset.manual=this.value?'1':''">
-      </div>
-      <div class="field form-full"><label>Notes</label><input type="text" id="f-notes" placeholder="Any notes about this item..."></div>
-      <div class="field form-full">
-        <label>Product Rating <span style="font-weight:400;color:var(--muted)">(helps you remember whether to reorder this brand)</span></label>
-        <div style="display:flex;align-items:center;gap:14px;margin-top:4px">
-          <div class="star-rating" id="f-star-rating">
-            <span class="star" data-val="1" onclick="setRating(1)" onmouseover="previewModalStars(1)" onmouseout="resetModalStars()">★</span>
-            <span class="star" data-val="2" onclick="setRating(2)" onmouseover="previewModalStars(2)" onmouseout="resetModalStars()">★</span>
-            <span class="star" data-val="3" onclick="setRating(3)" onmouseover="previewModalStars(3)" onmouseout="resetModalStars()">★</span>
-            <span class="star" data-val="4" onclick="setRating(4)" onmouseover="previewModalStars(4)" onmouseout="resetModalStars()">★</span>
-            <span class="star" data-val="5" onclick="setRating(5)" onmouseover="previewModalStars(5)" onmouseout="resetModalStars()">★</span>
-          </div>
-          <span id="f-rating-label" style="font-size:12px;color:var(--muted)">Not rated</span>
-          <button type="button" onclick="setRating(0)" style="font-size:11px;color:var(--muted);background:none;border:none;cursor:pointer;text-decoration:underline;padding:0">Clear</button>
-        </div>
+      <div class="modal-footer" style="margin-top:16px">
+        <button class="btn btn-ghost" onclick="closeModal('item-modal')">Close</button>
       </div>
     </div>
 
-    <div class="modal-section">
-      <p class="modal-section-label">📅 Most Recent Purchase</p>
+    <!-- Editable form — always shown for Add, toggled for Edit -->
+    <div id="item-edit-view">
       <div class="form-grid">
-        <div class="field"><label>Date purchased</label><input type="date" id="f-last-date"></div>
-        <div class="field"><label>Qty purchased</label><input type="number" id="f-last-qty" min="0.1" step="0.1" value="1"></div>
-        <div class="field"><label>Price paid</label><input type="text" id="f-last-price" placeholder="e.g. £12.99"></div>
-        <div class="field"><label>Started using</label><input type="date" id="f-started-using"></div>
-        <div class="field form-full" style="padding-top:2px">
-          <p style="font-size:12px;color:var(--muted);line-height:1.5">If bought before opening, set the date you actually started using it — this gives a more accurate stock estimate.</p>
+        <div class="field form-full">
+          <label>Item Name *</label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="text" id="f-name" placeholder="e.g. Coffee Beans (1kg)" style="flex:1">
+            <button type="button" class="btn btn-ghost btn-sm" onclick="openBarcodeScanner()" title="Scan barcode to find product">📷 Scan</button>
+          </div>
+        </div>
+        <div class="field"><label>Category</label>
+          <select id="f-category">
+            <option>Kitchen</option><option>Bathroom</option><option>Cleaning</option>
+            <option>Food &amp; Drink</option><option>Health</option><option>Garden</option>
+            <option>Office</option><option>Other</option>
+          </select>
+        </div>
+        <div class="field"><label>Purchase Cadence</label>
+          <select id="f-cadence">
+            <option value="monthly">Monthly supply</option>
+            <option value="bulk">Bulk (multi-month)</option>
+          </select>
+        </div>
+        <div class="field"><label>Units per purchase</label><input type="number" id="f-qty" min="0.1" step="0.1" value="1"></div>
+        <div class="field"><label>Months supply / purchase</label><input type="number" id="f-months" min="0.5" step="0.5" value="1"></div>
+        <div class="field form-full">
+          <label>Product URL</label>
+          <div style="display:flex;gap:8px;align-items:center">
+            <input type="url" id="f-url" placeholder="https://amazon.co.uk/..." oninput="autoFillStore()" style="flex:1">
+            <button type="button" class="btn btn-ghost btn-sm" onclick="fetchProductImage()" id="fetch-img-btn" title="Search for product image by name">🖼 Find Image</button>
+          </div>
+          <div class="img-preview-wrap" id="img-preview-wrap" style="display:none">
+            <img id="img-preview" class="img-preview" src="" alt="Product image">
+            <div>
+              <div id="img-preview-status" style="font-size:12px;color:var(--ok);margin-bottom:4px"></div>
+              <button type="button" onclick="clearProductImage()" style="font-size:11px;color:var(--muted);background:none;border:none;cursor:pointer;text-decoration:underline;padding:0">Remove image</button>
+            </div>
+          </div>
+        </div>
+        <div class="field form-full">
+          <label>Store name <span style="font-weight:400;color:var(--muted)">(auto-detected from URL, or enter manually)</span></label>
+          <input type="text" id="f-store" placeholder="e.g. Costco, Waitrose, Local Pharmacy..." oninput="this.dataset.manual=this.value?'1':''">
+        </div>
+        <div class="field form-full"><label>Notes</label><input type="text" id="f-notes" placeholder="Any notes about this item..."></div>
+        <div class="field form-full">
+          <label>Product Rating</label>
+          <div style="display:flex;align-items:center;gap:14px;margin-top:4px">
+            <div class="star-rating" id="f-star-rating">
+              <span class="star" data-val="1" onclick="setRating(1)" onmouseover="previewModalStars(1)" onmouseout="resetModalStars()">★</span>
+              <span class="star" data-val="2" onclick="setRating(2)" onmouseover="previewModalStars(2)" onmouseout="resetModalStars()">★</span>
+              <span class="star" data-val="3" onclick="setRating(3)" onmouseover="previewModalStars(3)" onmouseout="resetModalStars()">★</span>
+              <span class="star" data-val="4" onclick="setRating(4)" onmouseover="previewModalStars(4)" onmouseout="resetModalStars()">★</span>
+              <span class="star" data-val="5" onclick="setRating(5)" onmouseover="previewModalStars(5)" onmouseout="resetModalStars()">★</span>
+            </div>
+            <span id="f-rating-label" style="font-size:12px;color:var(--muted)">Not rated</span>
+            <button type="button" onclick="setRating(0)" style="font-size:11px;color:var(--muted);background:none;border:none;cursor:pointer;text-decoration:underline;padding:0">Clear</button>
+          </div>
         </div>
       </div>
-    </div>
 
-    <div class="modal-section">
-      <p style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">🔍 Find Best Price</p>
-      <input type="text" id="price-search-input" placeholder="Search product name across stores..." style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-family:var(--sans);font-size:13px;outline:none;margin-bottom:8px" oninput="updatePriceLinks()">
-      <div class="price-links" id="price-links"></div>
-    </div>
+      <div class="modal-section">
+        <p class="modal-section-label">📅 Most Recent Purchase</p>
+        <div class="form-grid">
+          <div class="field"><label>Date purchased</label><input type="date" id="f-last-date"></div>
+          <div class="field"><label>Qty purchased</label><input type="number" id="f-last-qty" min="0.1" step="0.1" value="1"></div>
+          <div class="field"><label>Price paid</label><input type="text" id="f-last-price" placeholder="e.g. £12.99"></div>
+          <div class="field"><label>Started using</label><input type="date" id="f-started-using"></div>
+          <div class="field form-full" style="padding-top:2px">
+            <p style="font-size:12px;color:var(--muted);line-height:1.5">If bought before opening, set the date you actually started using it.</p>
+          </div>
+        </div>
+      </div>
 
-    <div class="modal-footer">
-      <button class="btn btn-ghost" onclick="closeModal('item-modal')">Cancel</button>
-      <button class="btn btn-primary" onclick="saveItem()">Save Item</button>
+      <div class="modal-section" id="store-prices-section" style="display:none">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+          <p class="modal-section-label" style="margin:0">🏪 Price by Store</p>
+          <button type="button" class="btn btn-ghost btn-sm" onclick="addStorePriceRow()">+ Add Store</button>
+        </div>
+        <div id="store-prices-list"></div>
+      </div>
+
+      <div class="modal-section">
+        <p style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">🔍 Find Best Price</p>
+        <input type="text" id="price-search-input" placeholder="Search product name across stores..." style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-family:var(--sans);font-size:13px;outline:none;margin-bottom:8px" oninput="updatePriceLinks()">
+        <div class="price-links" id="price-links"></div>
+      </div>
+
+      <div class="modal-footer" style="flex-wrap:wrap;gap:8px">
+        <button class="btn btn-ghost btn-sm" onclick="openTemplatesModal()" style="margin-right:auto">📋 Templates</button>
+        <button class="btn btn-ghost" onclick="closeModal('item-modal')">Cancel</button>
+        <button class="btn btn-primary" onclick="saveItem()">Save Item</button>
+      </div>
     </div>
   </div>
 </div>
@@ -898,6 +1041,10 @@
 </div>
 
 <div id="toast">✓ Saved</div>
+<div id="undo-toast">
+  <span id="undo-msg">Item removed</span>
+  <button class="btn btn-ghost btn-sm" onclick="undoDelete()">↩ Undo</button>
+</div>
 
 <script>
 // ═══════════════════════════════════════════
@@ -1060,32 +1207,30 @@ function calcStock(item) {
 
   // If a manual stock count has been recorded, use actual consumption rate
   if (item.stockCount != null && item.stockCountDate) {
-    const totalPurchased = last.qty || 1;
-    const daysSincePurchase = (Date.now() - new Date(last.date+'T12:00:00')) / 86400000;
-    const daysSinceCount   = (Date.now() - new Date(item.stockCountDate+'T12:00:00')) / 86400000;
-    const used = totalPurchased - item.stockCount;
+    const totalPurchased     = last.qty || 1;
+    const daysSincePurchase  = (Date.now() - new Date(last.date+'T12:00:00')) / 86400000;
+    const used               = totalPurchased - item.stockCount;
+    const totalDays          = (item.months||1) * 30.5 * totalPurchased;
 
-    let daysLeft, pct;
+    let daysLeft;
     if (used <= 0 || daysSincePurchase <= 0) {
-      // Nothing used yet — fall back to time-based from count date
-      const totalDays = (item.months||1) * 30.5 * totalPurchased;
       daysLeft = Math.round(Math.max(0, totalDays - daysSincePurchase));
-      pct = Math.round(Math.max(0, Math.min(100, (item.stockCount / totalPurchased) * 100)));
     } else {
-      // Real consumption rate: units used ÷ days elapsed
       const ratePerDay = used / daysSincePurchase;
       daysLeft = ratePerDay > 0 ? Math.round(Math.max(0, item.stockCount / ratePerDay)) : 9999;
-      pct = Math.round(Math.max(0, Math.min(100, (item.stockCount / totalPurchased) * 100)));
     }
+
+    // pct = time remaining vs total expected lifespan
+    const pct = Math.round(Math.max(0, Math.min(100, (daysLeft / totalDays) * 100)));
     return { pct, daysLeft, referenceDate: item.stockCountDate, fromStockCount: true };
   }
 
   // Default: time-based from purchase / startedUsing date
   const referenceDate = item.startedUsing || last.date;
-  const daysSince = (Date.now() - new Date(referenceDate+'T12:00:00')) / 86400000;
-  const totalDays = (item.months||1) * 30.5 * (last.qty||1);
-  const pct = Math.round(Math.max(0, Math.min(100, (1 - daysSince/totalDays)*100)));
-  const daysLeft = Math.round(Math.max(0, totalDays - daysSince));
+  const daysSince  = (Date.now() - new Date(referenceDate+'T12:00:00')) / 86400000;
+  const totalDays  = (item.months||1) * 30.5 * (last.qty||1);
+  const daysLeft   = Math.round(Math.max(0, totalDays - daysSince));
+  const pct        = Math.round(Math.max(0, Math.min(100, (daysLeft / totalDays) * 100)));
   return { pct, daysLeft, referenceDate };
 }
 
@@ -1209,9 +1354,16 @@ function updateCountryConfirm() {
   if (el && c) el.textContent = `✓ Using ${c.flag} ${c.name} stores`;
 }
 
+function enableItemEdit() {
+  document.getElementById('item-modal-title').textContent = 'Edit Item';
+  document.getElementById('item-modal-subtitle').textContent = 'Editing: ' + (items.find(i => i.id === editingId)?.name || '');
+  document.getElementById('item-readonly-view').style.display = 'none';
+  document.getElementById('item-edit-view').style.display = 'block';
+}
+
 function wizardConnectDrive() {
   localStorage.setItem('stockroom_wizard_step', '2');
-  connectDrive(); // now redirects in same tab
+  connectDrive();
 }
 
 function wizardConnectDropbox() {
@@ -1359,13 +1511,19 @@ function getItemsDueWithin(days) {
     .map(item => { const s = calcStock(item); return s ? { item, daysLeft: s.daysLeft } : null; })
     .filter(x => x && x.daysLeft <= days)
     .sort((a, b) => a.daysLeft - b.daysLeft)
-    .map(({ item, daysLeft }) => ({
-      name:    item.name,
-      daysLeft,
-      store:   item.store || '',
-      url:     item.url   || '',
-      rating:  item.rating || null,
-    }));
+    .map(({ item, daysLeft }) => {
+      const history  = getPriceHistory(item);
+      const lastPrice = history.length ? history[history.length - 1].raw || null : null;
+      return {
+        name:        item.name,
+        daysLeft,
+        store:       item.store || '',
+        url:         item.url   || '',
+        rating:      item.rating || null,
+        lastPrice,
+        storePrices: (item.storePrices || []).filter(sp => sp.store && sp.price),
+      };
+    });
 }
 
 // Push the user's schedule + current items to the Worker KV
@@ -1552,8 +1710,591 @@ async function sendReminderEmail(manual = true) {
 }
 
 // ═══════════════════════════════════════════
-//  AUTO SYNC
+//  ITEM TEMPLATES
 // ═══════════════════════════════════════════
+const ITEM_TEMPLATES = [
+  { name:'Coffee Beans', category:'Kitchen', cadence:'monthly', qty:1, months:1, emoji:'☕' },
+  { name:'Washing Powder', category:'Cleaning', cadence:'monthly', qty:1, months:2, emoji:'🧺' },
+  { name:'Toilet Roll (9-pack)', category:'Bathroom', cadence:'bulk', qty:9, months:1, emoji:'🧻' },
+  { name:'Shampoo', category:'Bathroom', cadence:'monthly', qty:1, months:2, emoji:'🧴' },
+  { name:'Toothpaste', category:'Bathroom', cadence:'monthly', qty:1, months:2, emoji:'🦷' },
+  { name:'Washing Up Liquid', category:'Cleaning', cadence:'monthly', qty:1, months:1, emoji:'🍽️' },
+  { name:'Bin Bags', category:'Cleaning', cadence:'bulk', qty:1, months:2, emoji:'🗑️' },
+  { name:'Kitchen Roll', category:'Kitchen', cadence:'monthly', qty:1, months:1, emoji:'🧻' },
+  { name:'Dishwasher Tablets', category:'Cleaning', cadence:'bulk', qty:60, months:2, emoji:'✨' },
+  { name:'Hand Soap', category:'Bathroom', cadence:'monthly', qty:1, months:1, emoji:'🧼' },
+  { name:'Olive Oil', category:'Food & Drink', cadence:'monthly', qty:1, months:2, emoji:'🫒' },
+  { name:'Milk', category:'Food & Drink', cadence:'monthly', qty:4, months:0.5, emoji:'🥛' },
+  { name:'Paracetamol', category:'Health', cadence:'bulk', qty:1, months:6, emoji:'💊' },
+  { name:'Vitamins', category:'Health', cadence:'monthly', qty:1, months:1, emoji:'💊' },
+  { name:'Dog Food', category:'Other', cadence:'bulk', qty:1, months:1, emoji:'🐕' },
+  { name:'Cat Food', category:'Other', cadence:'bulk', qty:1, months:1, emoji:'🐈' },
+  { name:'Fabric Softener', category:'Cleaning', cadence:'monthly', qty:1, months:2, emoji:'🌸' },
+  { name:'Shower Gel', category:'Bathroom', cadence:'monthly', qty:1, months:1, emoji:'🚿' },
+  { name:'Deodorant', category:'Bathroom', cadence:'monthly', qty:1, months:1, emoji:'💨' },
+  { name:'Pasta', category:'Food & Drink', cadence:'bulk', qty:4, months:1, emoji:'🍝' },
+];
+
+function openTemplatesModal() {
+  const grid = document.getElementById('templates-grid');
+  grid.innerHTML = ITEM_TEMPLATES.map((t, i) =>
+    `<button onclick="applyTemplate(${i})"
+      style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;cursor:pointer;text-align:left;transition:border-color 0.15s"
+      onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
+      <span style="font-size:22px">${t.emoji}</span>
+      <div>
+        <div style="font-size:13px;font-weight:600;color:var(--text)">${esc(t.name)}</div>
+        <div style="font-size:11px;color:var(--muted)">${t.category} · ${t.months}mo supply</div>
+      </div>
+    </button>`
+  ).join('');
+  openModal('templates-modal');
+}
+
+function applyTemplate(idx) {
+  const t = ITEM_TEMPLATES[idx];
+  closeModal('templates-modal');
+  // Pre-fill the add form
+  document.getElementById('f-name').value     = t.name;
+  document.getElementById('f-category').value = t.category;
+  document.getElementById('f-cadence').value  = t.cadence;
+  document.getElementById('f-qty').value      = t.qty;
+  document.getElementById('f-months').value   = t.months;
+  document.getElementById('f-name').focus();
+  toast(`Template: ${t.name}`);
+}
+
+// ═══════════════════════════════════════════
+//  BARCODE SCANNER
+// ═══════════════════════════════════════════
+let barcodeStream   = null;
+let barcodeInterval = null;
+
+async function openBarcodeScanner() {
+  // Check for BarcodeDetector API support
+  if (!('BarcodeDetector' in window)) {
+    toast('Barcode scanning not supported on this browser — try Chrome on Android');
+    return;
+  }
+  openModal('barcode-modal');
+  const video     = document.getElementById('barcode-video');
+  const statusEl  = document.getElementById('barcode-status');
+  try {
+    barcodeStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+    video.srcObject = barcodeStream;
+    const detector = new BarcodeDetector({ formats: ['ean_13','ean_8','upc_a','upc_e','code_128','code_39'] });
+    barcodeInterval = setInterval(async () => {
+      if (video.readyState < 2) return;
+      try {
+        const codes = await detector.detect(video);
+        if (codes.length) {
+          clearInterval(barcodeInterval);
+          const barcode = codes[0].rawValue;
+          statusEl.textContent = `Found: ${barcode} — looking up product…`;
+          navigator.vibrate && navigator.vibrate([50, 30, 50]);
+          await lookupBarcode(barcode);
+        }
+      } catch(e) {}
+    }, 400);
+  } catch(e) {
+    statusEl.textContent = 'Could not access camera. Please check permissions.';
+  }
+}
+
+function closeBarcodeScanner() {
+  clearInterval(barcodeInterval);
+  barcodeInterval = null;
+  if (barcodeStream) { barcodeStream.getTracks().forEach(t => t.stop()); barcodeStream = null; }
+  closeModal('barcode-modal');
+}
+
+async function lookupBarcode(barcode) {
+  const statusEl = document.getElementById('barcode-status');
+  try {
+    // Try Open Food Facts first
+    let res = await fetch(`https://world.openfoodfacts.org/api/v0/product/${barcode}.json`);
+    let data = await res.json();
+    if (data.status === 1 && data.product?.product_name) {
+      const p = data.product;
+      closeBarcodeScanner();
+      document.getElementById('f-name').value     = p.product_name || '';
+      document.getElementById('f-category').value = 'Food & Drink';
+      if (p.image_url) {
+        pendingImageUrl = p.image_url;
+        showImagePreview(p.image_url, 'Image found via barcode');
+      }
+      toast('Product found ✓');
+      return;
+    }
+    // Try Open Beauty Facts
+    res = await fetch(`https://world.openbeautyfacts.org/api/v0/product/${barcode}.json`);
+    data = await res.json();
+    if (data.status === 1 && data.product?.product_name) {
+      const p = data.product;
+      closeBarcodeScanner();
+      document.getElementById('f-name').value = p.product_name || '';
+      if (p.image_url) { pendingImageUrl = p.image_url; showImagePreview(p.image_url, 'Image found via barcode'); }
+      toast('Product found ✓');
+      return;
+    }
+    statusEl.textContent = `Barcode ${barcode} not found — you can enter the name manually.`;
+    setTimeout(() => {
+      closeBarcodeScanner();
+      document.getElementById('f-name').focus();
+    }, 2000);
+  } catch(e) {
+    statusEl.textContent = 'Lookup failed — check your connection.';
+    setTimeout(closeBarcodeScanner, 2000);
+  }
+}
+
+// ═══════════════════════════════════════════
+//  STORE PRICES (multiple stores per item)
+// ═══════════════════════════════════════════
+function renderStorePricesSection(item) {
+  const section = document.getElementById('store-prices-section');
+  const list    = document.getElementById('store-prices-list');
+  if (!section || !list) return;
+
+  const prices = item?.storePrices || [];
+  section.style.display = 'block';
+
+  if (!prices.length) {
+    list.innerHTML = `<p style="font-size:12px;color:var(--muted);padding:4px 0">No store prices added yet. Click + Add Store to compare prices across different shops.</p>`;
+    return;
+  }
+
+  list.innerHTML = prices.map((sp, i) => `
+    <div style="display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)">
+      <input type="text" value="${esc(sp.store)}" placeholder="Store name"
+        style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text);font-size:12px;font-family:var(--sans)"
+        onchange="updateStorePrice(${i},'store',this.value)">
+      <input type="text" value="${esc(sp.price)}" placeholder="Price"
+        style="width:80px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text);font-size:12px;font-family:var(--mono)"
+        onchange="updateStorePrice(${i},'price',this.value)">
+      <button onclick="removeStorePrice(${i})" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:16px;padding:2px 4px"
+        onmouseover="this.style.color='var(--danger)'" onmouseout="this.style.color='var(--muted)'">✕</button>
+    </div>`).join('');
+
+  // Show cheapest badge if multiple prices
+  if (prices.length > 1) {
+    const parsed = prices.map((sp,i) => ({ i, val: parsePriceValue(sp.price) })).filter(x => x.val !== null);
+    if (parsed.length > 1) {
+      const min = Math.min(...parsed.map(x => x.val));
+      const cheapestIdx = parsed.find(x => x.val === min)?.i;
+      if (cheapestIdx !== undefined) {
+        const rows = list.querySelectorAll('div');
+        if (rows[cheapestIdx]) rows[cheapestIdx].style.background = 'rgba(76,187,138,0.08)';
+      }
+    }
+  }
+}
+
+// Temporary store prices for the current modal session
+let tempStorePrices = [];
+
+function addStorePriceRow() {
+  tempStorePrices.push({ store: '', price: '' });
+  renderTempStorePrices();
+}
+
+function updateStorePrice(idx, field, val) {
+  if (tempStorePrices[idx]) tempStorePrices[idx][field] = val;
+}
+
+function removeStorePrice(idx) {
+  tempStorePrices.splice(idx, 1);
+  renderTempStorePrices();
+}
+
+function renderTempStorePrices() {
+  const section = document.getElementById('store-prices-section');
+  const list    = document.getElementById('store-prices-list');
+  if (!section || !list) return;
+  section.style.display = 'block';
+  if (!tempStorePrices.length) {
+    list.innerHTML = `<p style="font-size:12px;color:var(--muted);padding:4px 0">No store prices added yet.</p>`;
+    return;
+  }
+  list.innerHTML = tempStorePrices.map((sp, i) => `
+    <div style="display:flex;gap:8px;align-items:center;padding:6px 0;border-bottom:1px solid var(--border)">
+      <input type="text" value="${esc(sp.store)}" placeholder="Store name"
+        style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text);font-size:12px;font-family:var(--sans)"
+        oninput="updateStorePrice(${i},'store',this.value)">
+      <input type="text" value="${esc(sp.price)}" placeholder="e.g. £12.99"
+        style="width:90px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text);font-size:12px;font-family:var(--mono)"
+        oninput="updateStorePrice(${i},'price',this.value)">
+      <button onclick="removeStorePrice(${i})" style="background:none;border:none;cursor:pointer;color:var(--muted);font-size:16px;padding:2px 4px"
+        onmouseover="this.style.color='var(--danger)'" onmouseout="this.style.color='var(--muted)'">✕</button>
+    </div>`).join('');
+}
+
+
+function renderHealthDashboard() {
+  const el = document.getElementById('health-dashboard');
+  if (!el || !items.length) { if (el) el.innerHTML = ''; return; }
+  const threshold = settings.threshold;
+  let critical = 0, warn = 0, ok = 0, nodata = 0;
+  items.forEach(item => {
+    const s = calcStock(item);
+    const status = getStatus(s?.pct ?? null, threshold);
+    if (status === 'critical') critical++;
+    else if (status === 'warn') warn++;
+    else if (status === 'ok') ok++;
+    else nodata++;
+  });
+  const pill = (count, label, color, filterVal) => count === 0 ? '' :
+    `<button onclick="setFilter('status','${filterVal}',this)" style="display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:99px;border:1px solid ${color}33;background:${color}15;color:${color};font-size:12px;font-weight:700;cursor:pointer;font-family:var(--sans)">
+      ${label} <span style="font-size:14px;font-weight:800">${count}</span>
+    </button>`;
+  el.innerHTML =
+    pill(critical, '🔴 Critical', '#e85050', 'critical') +
+    pill(warn,     '🟡 Low',      '#e8a838', 'warn') +
+    pill(ok,       '🟢 Good',     '#4cbb8a', 'ok') +
+    (nodata ? `<span style="font-size:12px;color:var(--muted);padding:5px 4px">${nodata} no data</span>` : '');
+}
+
+// ═══════════════════════════════════════════
+//  DELETE LOG ENTRIES
+// ═══════════════════════════════════════════
+function deleteLogEntry(itemId, logId) {
+  const item = items.find(i => i.id === itemId);
+  if (!item) return;
+  item.logs = (item.logs||[]).filter(l => l.id !== logId);
+  touchItem(item);
+  saveData();
+  // Re-render the log history in place
+  renderLogHistory(item);
+  renderAll();
+  setTimeout(syncAll, 400);
+}
+
+function renderLogHistory(item) {
+  const histWrap    = document.getElementById('log-history');
+  const histEntries = document.getElementById('log-history-entries');
+  if (!histWrap || !histEntries) return;
+  if (!item.logs || !item.logs.length) { histWrap.style.display = 'none'; return; }
+
+  histWrap.style.display = 'block';
+  const pricedLogs = item.logs.map(l => parsePriceValue(l.price)).filter(p => p !== null);
+  const minPrice   = pricedLogs.length ? Math.min(...pricedLogs) : null;
+  const maxPrice   = pricedLogs.length ? Math.max(...pricedLogs) : null;
+
+  histEntries.innerHTML = [...item.logs].reverse().slice(0,8).map((l, i, arr) => {
+    const thisPrice = parsePriceValue(l.price);
+    const prevLog   = arr[i + 1];
+    const prevPrice = prevLog ? parsePriceValue(prevLog.price) : null;
+    let priceTrendEl = '';
+    if (thisPrice !== null && prevPrice !== null) {
+      const diff = thisPrice - prevPrice;
+      if (Math.abs(diff) >= 0.01)
+        priceTrendEl = diff > 0
+          ? `<span style="color:var(--danger);font-size:10px">↑</span>`
+          : `<span style="color:var(--ok);font-size:10px">↓</span>`;
+    }
+    const isCheapest = thisPrice !== null && thisPrice === minPrice && pricedLogs.length > 1;
+    const isMostExp  = thisPrice !== null && thisPrice === maxPrice && pricedLogs.length > 1 && minPrice !== maxPrice;
+    return `<div class="log-entry" style="display:flex;align-items:center;gap:8px">
+      <div style="flex:1;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span style="color:var(--muted);font-size:12px">${esc(l.store)||'—'}</span>
+        <span style="color:var(--muted);font-family:var(--mono);font-size:11px">${fmtDate(l.date)}</span>
+        <span style="font-family:var(--mono);font-size:12px;display:flex;align-items:center;gap:4px">
+          ×${l.qty}
+          ${l.price ? `<span style="color:${isCheapest?'var(--ok)':isMostExp?'var(--danger)':'var(--text)'};font-weight:700">${esc(l.price)}</span>${priceTrendEl}${isCheapest?'<span style="font-size:10px">🏷</span>':''}` : ''}
+        </span>
+      </div>
+      <button onclick="deleteLogEntry('${item.id}','${l.id}')" title="Delete this entry" style="background:none;border:none;cursor:pointer;font-size:14px;color:var(--muted);padding:2px 4px;border-radius:4px;flex-shrink:0" onmouseover="this.style.color='var(--danger)'" onmouseout="this.style.color='var(--muted)'">✕</button>
+    </div>`;
+  }).join('');
+
+  if (pricedLogs.length >= 2) {
+    const avg = (pricedLogs.reduce((a,b)=>a+b,0) / pricedLogs.length).toFixed(2);
+    histEntries.innerHTML += `<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:11px;color:var(--muted);font-family:var(--mono);display:flex;gap:16px">
+      <span>avg £${avg}</span>
+      <span style="color:var(--ok)">low £${minPrice.toFixed(2)}</span>
+      <span style="color:var(--danger)">high £${maxPrice.toFixed(2)}</span>
+    </div>`;
+  }
+}
+
+// ═══════════════════════════════════════════
+//  QUICK LOG FROM SHOPPING LIST
+// ═══════════════════════════════════════════
+function quickLogFromShopping(itemId) {
+  // Open the log modal pre-filled, then switch back to shopping after save
+  openLogModal(itemId);
+  // Mark that we came from shopping so we can return after save
+  sessionStorage.setItem('log_return_view', 'shopping');
+}
+
+
+// ═══════════════════════════════════════════
+//  PWA — SERVICE WORKER + INSTALL PROMPT
+// ═══════════════════════════════════════════
+let deferredInstallPrompt = null;
+
+if ('serviceWorker' in navigator) {
+  // Only register SW when deployed — not in Claude preview or localhost without sw.js
+  const isDeployed = location.hostname.includes('github.io') || location.hostname.includes('artbot5000');
+  if (isDeployed) {
+    window.addEventListener('load', () => {
+      navigator.serviceWorker.register('./sw.js').catch(e => console.warn('SW failed:', e));
+    });
+  }
+}
+
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredInstallPrompt = e;
+  if (!localStorage.getItem('stockroom_install_dismissed')) {
+    setTimeout(() => {
+      const banner = document.getElementById('install-banner');
+      if (banner) banner.classList.add('show');
+    }, 3000);
+  }
+  const row = document.getElementById('install-prompt-row');
+  if (row) row.style.display = 'flex';
+});
+
+window.addEventListener('appinstalled', () => {
+  deferredInstallPrompt = null;
+  const banner = document.getElementById('install-banner');
+  if (banner) banner.classList.remove('show');
+  toast('STOCKROOM installed ✓');
+});
+
+async function installPWA() {
+  if (!deferredInstallPrompt) {
+    toast('Use "Add to Home Screen" from your browser menu');
+    return;
+  }
+  deferredInstallPrompt.prompt();
+  const { outcome } = await deferredInstallPrompt.userChoice;
+  deferredInstallPrompt = null;
+  const banner = document.getElementById('install-banner');
+  if (banner) banner.classList.remove('show');
+}
+
+function dismissInstallBanner() {
+  const banner = document.getElementById('install-banner');
+  if (banner) banner.classList.remove('show');
+  try { localStorage.setItem('stockroom_install_dismissed', '1'); } catch(e){}
+}
+
+// ═══════════════════════════════════════════
+//  PUSH NOTIFICATIONS
+// ═══════════════════════════════════════════
+let notifEnabled = false;
+
+function loadNotifSettings() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('stockroom_notif') || '{}');
+    notifEnabled = saved.enabled || false;
+    const daysEl = document.getElementById('notif-days');
+    if (daysEl && saved.days) daysEl.value = saved.days;
+  } catch(e){}
+  updateNotifUI();
+}
+
+function saveNotifSettings() {
+  try {
+    const days = document.getElementById('notif-days')?.value || '14';
+    localStorage.setItem('stockroom_notif', JSON.stringify({ enabled: notifEnabled, days }));
+  } catch(e){}
+}
+
+function updateNotifUI() {
+  const btn        = document.getElementById('notif-btn');
+  const statusText = document.getElementById('notif-status-text');
+  const threshRow  = document.getElementById('notif-threshold-row');
+  const installRow = document.getElementById('install-prompt-row');
+  if (!btn || !statusText) return;
+
+  const permission = 'Notification' in window ? Notification.permission : 'unsupported';
+
+  if (permission === 'unsupported') {
+    statusText.textContent = 'Not supported on this browser';
+    btn.style.display = 'none';
+    return;
+  }
+  if (permission === 'denied') {
+    statusText.textContent = 'Blocked — enable in browser settings';
+    statusText.style.color = 'var(--danger)';
+    btn.style.display = 'none';
+    return;
+  }
+  if (notifEnabled && permission === 'granted') {
+    statusText.textContent = 'Active — you\'ll be alerted when items run low';
+    statusText.style.color = 'var(--ok)';
+    btn.textContent = 'Disable';
+    btn.className = 'btn btn-danger btn-sm';
+    if (threshRow) threshRow.style.display = 'flex';
+    if (installRow) installRow.style.display = deferredInstallPrompt ? 'flex' : 'none';
+  } else {
+    statusText.textContent = 'Not enabled';
+    statusText.style.color = 'var(--muted)';
+    btn.textContent = 'Enable';
+    btn.className = 'btn btn-ghost btn-sm';
+    if (threshRow) threshRow.style.display = 'none';
+  }
+}
+
+async function toggleNotifications() {
+  if (notifEnabled) {
+    notifEnabled = false;
+    saveNotifSettings();
+    updateNotifUI();
+    toast('Notifications disabled');
+    return;
+  }
+  if (!('Notification' in window)) { toast('Not supported on this browser'); return; }
+  const permission = await Notification.requestPermission();
+  if (permission === 'granted') {
+    notifEnabled = true;
+    saveNotifSettings();
+    updateNotifUI();
+    toast('Notifications enabled ✓');
+    setTimeout(() => sendLocalNotification(
+      '📦 STOCKROOM notifications active',
+      'You\'ll be notified when items are running low.',
+      'stockroom-test'
+    ), 600);
+  } else {
+    toast('Notifications blocked — enable in browser settings');
+    updateNotifUI();
+  }
+}
+
+function sendLocalNotification(title, body, tag) {
+  if (!notifEnabled || Notification.permission !== 'granted') return;
+  if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+    navigator.serviceWorker.ready.then(reg => {
+      reg.showNotification(title, {
+        body, tag: tag || 'stockroom', renotify: true,
+        icon: './icon-192.png', badge: './icon-192.png',
+        data: { url: window.location.href },
+      });
+    });
+  } else {
+    new Notification(title, { body, icon: './icon-192.png', tag: tag || 'stockroom' });
+  }
+}
+
+function checkLowStockNotifications() {
+  if (!notifEnabled || Notification.permission !== 'granted') return;
+  const days = parseInt(document.getElementById('notif-days')?.value || '14');
+  const due  = items
+    .map(item => { const s = calcStock(item); return s && s.daysLeft <= days ? { item, daysLeft: s.daysLeft } : null; })
+    .filter(Boolean)
+    .sort((a, b) => a.daysLeft - b.daysLeft);
+  if (!due.length) return;
+
+  const today = new Date().toISOString().slice(0, 10);
+  if (localStorage.getItem('stockroom_last_notif') === today) return;
+
+  const critical = due.filter(d => d.daysLeft <= 7);
+  const title = critical.length
+    ? `🔴 ${critical.length} item${critical.length !== 1 ? 's' : ''} critically low!`
+    : `📦 ${due.length} item${due.length !== 1 ? 's' : ''} running low`;
+  const body = due.slice(0, 3).map(d => `• ${d.item.name} (${d.daysLeft}d left)`).join('\n')
+    + (due.length > 3 ? `\n+ ${due.length - 3} more` : '');
+
+  sendLocalNotification(title, body, 'stockroom-lowstock');
+  try { localStorage.setItem('stockroom_last_notif', today); } catch(e){}
+}
+
+// ═══════════════════════════════════════════
+//  SORT
+// ═══════════════════════════════════════════
+let activeSort = 'status';
+
+function setSort(val) {
+  activeSort = val;
+  renderGrid();
+}
+
+// ═══════════════════════════════════════════
+//  SWIPE TO LOG
+// ═══════════════════════════════════════════
+const swipeState = {};
+const SWIPE_THRESHOLD = 72; // px to trigger
+
+function swipeStart(e, id) {
+  swipeState[id] = { startX: e.touches[0].clientX, triggered: false };
+}
+
+function swipeMove(e, id) {
+  const s = swipeState[id];
+  if (!s) return;
+  const dx = e.touches[0].clientX - s.startX;
+  if (dx < 0) return; // only right swipe
+  const hint = document.getElementById('swipe-hint-' + id);
+  if (hint) hint.style.opacity = Math.min(1, dx / SWIPE_THRESHOLD);
+  if (dx > SWIPE_THRESHOLD && !s.triggered) {
+    s.triggered = true;
+    if (hint) hint.style.opacity = 1;
+    navigator.vibrate && navigator.vibrate(30);
+  }
+}
+
+function swipeEnd(e, id) {
+  const s = swipeState[id];
+  if (!s) return;
+  const hint = document.getElementById('swipe-hint-' + id);
+  if (hint) hint.style.opacity = 0;
+  if (s.triggered) openLogModal(id);
+  delete swipeState[id];
+}
+
+// ═══════════════════════════════════════════
+//  UNDO DELETE
+// ═══════════════════════════════════════════
+let deletedItem   = null;
+let deletedIndex  = null;
+let undoTimer     = null;
+
+function deleteItem(id) {
+  const idx  = items.findIndex(i => i.id === id);
+  const item = items[idx];
+  if (!item) return;
+
+  // Stash for undo
+  deletedItem  = item;
+  deletedIndex = idx;
+  items.splice(idx, 1);
+  saveData();
+  renderAll();
+  setTimeout(syncAll, 400);
+
+  // Show undo toast
+  clearTimeout(undoTimer);
+  const t = document.getElementById('undo-toast');
+  const m = document.getElementById('undo-msg');
+  if (m) m.textContent = `"${item.name}" removed`;
+  if (t) t.classList.add('show');
+  undoTimer = setTimeout(() => {
+    if (t) t.classList.remove('show');
+    deletedItem  = null;
+    deletedIndex = null;
+  }, 5000);
+}
+
+function undoDelete() {
+  clearTimeout(undoTimer);
+  const t = document.getElementById('undo-toast');
+  if (t) t.classList.remove('show');
+  if (!deletedItem) return;
+  // Re-insert at original position
+  items.splice(deletedIndex, 0, deletedItem);
+  deletedItem  = null;
+  deletedIndex = null;
+  saveData();
+  renderAll();
+  setTimeout(syncAll, 400);
+  toast('Restored ✓');
+}
+
+
 let lastAutoSync = 0;
 const AUTO_SYNC_COOLDOWN = 30000; // min 30s between auto-syncs
 
@@ -1676,6 +2417,7 @@ function renderAll() {
   buildStoreFilterBar();
   buildTagFilterBar();
   buildShoppingTagFilterBarInline();
+  renderHealthDashboard();
   updateSnSBanner();
   renderGrid();
   // sync settings UI
@@ -1747,11 +2489,32 @@ function renderGrid() {
     return;
   }
 
-  // Sort critical first
+  // Sort
   filtered.sort((a, b) => {
-    const pa = calcStock(a)?.pct ?? 101;
-    const pb = calcStock(b)?.pct ?? 101;
-    return pa - pb;
+    switch (activeSort) {
+      case 'name':
+        return (a.name||'').localeCompare(b.name||'');
+      case 'days': {
+        const da = calcStock(a)?.daysLeft ?? 9999;
+        const db = calcStock(b)?.daysLeft ?? 9999;
+        return da - db;
+      }
+      case 'lastbought': {
+        const la = a.logs?.at(-1)?.date || '0000';
+        const lb = b.logs?.at(-1)?.date || '0000';
+        return lb.localeCompare(la); // most recent first
+      }
+      case 'rating':
+        return (b.rating||0) - (a.rating||0);
+      case 'added':
+        return 0; // preserve insertion order
+      case 'status':
+      default: {
+        const pa = calcStock(a)?.pct ?? 101;
+        const pb = calcStock(b)?.pct ?? 101;
+        return pa - pb;
+      }
+    }
   });
 
   grid.innerHTML = filtered.map(item => cardHTML(item, threshold)).join('');
@@ -1772,13 +2535,12 @@ function cardHTML(item, threshold) {
   const statusBadge = `<span class="status-badge" style="background:${color}22;color:${color}">${STATUS_LABEL[status]}</span>`;
 
   return `
-  <div class="item-card" style="border-left:3px solid ${color}">
+  <div class="item-card" style="border-left:3px solid ${color}" data-id="${item.id}"
+    ontouchstart="swipeStart(event,'${item.id}')" ontouchmove="swipeMove(event,'${item.id}')" ontouchend="swipeEnd(event,'${item.id}')">
+    <div class="swipe-hint" id="swipe-hint-${item.id}">📋</div>
     ${item.imageUrl ? `<img class="card-image" src="${esc(item.imageUrl)}" alt="${esc(item.name)}" onerror="this.style.display='none'">` : ''}
     <div class="card-top">
-      <div>
-        <div class="card-category">${item.category||'Other'}</div>
-        <div class="card-name">${esc(item.name)}</div>
-      </div>
+      <div class="card-category">${item.category||'Other'}</div>
       <div class="card-btns">
         <button class="btn-icon" title="Update stock count" onclick="openStockCountModal('${item.id}')">🔢</button>
         <button class="btn-icon" title="Price history" onclick="openPriceHistoryModal('${item.id}')" ${getPriceHistory(item).length < 2 ? 'style="opacity:0.35;cursor:default"' : ''}>💰</button>
@@ -1786,6 +2548,7 @@ function cardHTML(item, threshold) {
         <button class="btn-icon" title="Delete" onclick="deleteItem('${item.id}')">🗑️</button>
       </div>
     </div>
+    <div class="card-name" style="margin-bottom:12px">${esc(item.name)}</div>
     <div class="stock-bar-wrap">
       <div class="stock-bar-label">
         <span>STOCK</span>
@@ -1815,9 +2578,26 @@ function cardHTML(item, threshold) {
       </span>
     </div>
     ${cardTagsHTML(item)}
+    ${item.notes ? `<div class="card-notes">💬 ${esc(item.notes)}</div>` : ''}
+    ${storePricesCardHTML(item)}
     ${item.url ? `<a class="card-link" href="${esc(item.url)}" target="_blank" rel="noopener">🛒 Buy now ↗</a>` : ''}
     <button class="btn btn-ghost btn-sm log-btn" onclick="openLogModal('${item.id}')">+ Log Purchase</button>
   </div>`;
+}
+
+function storePricesCardHTML(item) {
+  const prices = (item.storePrices || []).filter(sp => sp.store && sp.price);
+  if (!prices.length) return '';
+  const parsed = prices.map(sp => ({ ...sp, val: parsePriceValue(sp.price) }));
+  const validPrices = parsed.filter(p => p.val !== null);
+  const minVal = validPrices.length ? Math.min(...validPrices.map(p => p.val)) : null;
+  const chips = parsed.map(sp => {
+    const isBest = sp.val !== null && sp.val === minVal && validPrices.length > 1;
+    return `<span style="font-size:11px;font-family:var(--mono);padding:2px 8px;border-radius:99px;background:${isBest?'rgba(76,187,138,0.15)':'var(--surface2)'};border:1px solid ${isBest?'rgba(76,187,138,0.4)':'var(--border)'};color:${isBest?'var(--ok)':'var(--muted)'};white-space:nowrap">
+      ${esc(sp.store)}: ${esc(sp.price)}${isBest?' 🏷':''}
+    </span>`;
+  }).join('');
+  return `<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px">${chips}</div>`;
 }
 
 function esc(str) {
@@ -2131,6 +2911,14 @@ function clearProductImage() {
   document.getElementById('img-preview').src = '';
 }
 
+function showImagePreview(imageUrl, statusText) {
+  showModalImagePreview(imageUrl);
+  if (statusText) {
+    const status = document.getElementById('img-preview-status');
+    if (status) { status.textContent = '✓ ' + statusText; status.style.color = 'var(--ok)'; }
+  }
+}
+
 function showModalImagePreview(imageUrl) {
   if (!imageUrl) { clearProductImage(); return; }
   pendingImageUrl = imageUrl;
@@ -2370,6 +3158,123 @@ function renderReport() {
 
   document.getElementById('report-content').innerHTML = html || '<p style="color:var(--muted);text-align:center;padding:60px">No items yet.</p>';
 }
+
+// ═══════════════════════════════════════════
+//  MONTHLY SPEND TRACKER
+// ═══════════════════════════════════════════
+let spendVisible = false;
+
+function toggleSpendView() {
+  spendVisible = !spendVisible;
+  const section = document.getElementById('spend-section');
+  const btn     = document.getElementById('spend-toggle-btn');
+  if (section) section.style.display = spendVisible ? 'block' : 'none';
+  if (btn)     btn.style.background  = spendVisible ? 'var(--surface2)' : '';
+  if (spendVisible) renderSpendChart();
+}
+
+function getMonthlySpend() {
+  // Aggregate all log entries by month
+  const byMonth = {};
+  items.forEach(item => {
+    (item.logs || []).forEach(log => {
+      if (!log.date || !log.price) return;
+      const val = parsePriceValue(log.price);
+      if (val === null) return;
+      const key = log.date.slice(0, 7); // YYYY-MM
+      if (!byMonth[key]) byMonth[key] = { total: 0, entries: [] };
+      byMonth[key].total += val;
+      byMonth[key].entries.push({ item: item.name, price: val, raw: log.price, store: log.store });
+    });
+  });
+  // Sort by month
+  return Object.entries(byMonth)
+    .sort(([a], [b]) => a.localeCompare(b))
+    .slice(-12); // last 12 months
+}
+
+function renderSpendChart() {
+  const chartEl     = document.getElementById('spend-chart');
+  const breakdownEl = document.getElementById('spend-breakdown');
+  if (!chartEl || !breakdownEl) return;
+
+  const data = getMonthlySpend();
+  if (!data.length) {
+    chartEl.innerHTML     = `<p style="color:var(--muted);font-size:13px">No price data logged yet. Add prices when logging purchases to track spend over time.</p>`;
+    breakdownEl.innerHTML = '';
+    return;
+  }
+
+  const totals  = data.map(([, d]) => d.total);
+  const maxVal  = Math.max(...totals);
+  const W = 440, H = 180, PAD = { t: 16, r: 16, b: 40, l: 52 };
+  const chartW  = W - PAD.l - PAD.r;
+  const chartH  = H - PAD.t - PAD.b;
+  const barW    = Math.min(36, (chartW / data.length) - 4);
+  const currency = '£';
+
+  const bars = data.map(([month, d], i) => {
+    const barH = maxVal > 0 ? (d.total / maxVal) * chartH : 0;
+    const x    = PAD.l + (i / data.length) * chartW + (chartW / data.length - barW) / 2;
+    const y    = PAD.t + chartH - barH;
+    const isLatest = i === data.length - 1;
+    const label = new Date(month + '-01').toLocaleDateString('en-GB', { month: 'short' });
+    return `
+      <rect x="${x}" y="${y}" width="${barW}" height="${barH}" rx="3" fill="${isLatest ? '#e8a838' : '#2e3350'}"/>
+      <text x="${x + barW/2}" y="${y - 5}" text-anchor="middle" font-size="9" fill="${isLatest ? '#e8a838' : '#7880a0'}" font-family="monospace">${currency}${d.total.toFixed(0)}</text>
+      <text x="${x + barW/2}" y="${H - PAD.b + 14}" text-anchor="middle" font-size="9" fill="#7880a0" font-family="monospace">${label}</text>`;
+  }).join('');
+
+  // avg line
+  const avg  = totals.reduce((a, b) => a + b, 0) / totals.length;
+  const avgY = PAD.t + chartH - (avg / maxVal) * chartH;
+  const avgLine = `
+    <line x1="${PAD.l}" y1="${avgY}" x2="${W - PAD.r}" y2="${avgY}" stroke="#7880a0" stroke-dasharray="4,3" stroke-width="1"/>
+    <text x="${PAD.l - 4}" y="${avgY + 4}" text-anchor="end" font-size="9" fill="#7880a0" font-family="monospace">avg</text>`;
+
+  // y-axis
+  const yLabel = v => {
+    const yy = PAD.t + chartH - (v / maxVal) * chartH;
+    return `<text x="${PAD.l - 6}" y="${yy + 4}" text-anchor="end" font-size="9" fill="#7880a0" font-family="monospace">${currency}${v.toFixed(0)}</text>`;
+  };
+  const yLabels = [0, maxVal / 2, maxVal].map(yLabel).join('');
+
+  chartEl.innerHTML = `
+    <svg viewBox="0 0 ${W} ${H}" style="width:100%;border-radius:8px;background:#1a1d27">
+      ${yLabels}${avgLine}${bars}
+    </svg>
+    <div style="display:flex;gap:16px;margin-top:8px;font-size:11px;font-family:monospace;color:var(--muted)">
+      <span>Total logged: ${currency}${totals.reduce((a,b)=>a+b,0).toFixed(2)}</span>
+      <span>Monthly avg: ${currency}${avg.toFixed(2)}</span>
+      <span style="color:#e8a838">This month: ${currency}${totals[totals.length-1].toFixed(2)}</span>
+    </div>`;
+
+  // Breakdown by category for latest month
+  const [latestMonth, latestData] = data[data.length - 1];
+  const byCat = {};
+  latestData.entries.forEach(e => {
+    const item = items.find(i => i.name === e.item);
+    const cat  = item?.category || 'Other';
+    if (!byCat[cat]) byCat[cat] = 0;
+    byCat[cat] += e.price;
+  });
+
+  const catRows = Object.entries(byCat)
+    .sort(([, a], [, b]) => b - a)
+    .map(([cat, total]) => `
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px">
+        <span style="color:var(--muted)">${CATEGORY_EMOJI[cat]||'📦'} ${cat}</span>
+        <span style="font-family:monospace;font-weight:700">${currency}${total.toFixed(2)}</span>
+      </div>`).join('');
+
+  const mLabel = new Date(latestMonth + '-01').toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+  breakdownEl.innerHTML = `
+    <div style="margin-top:16px;padding-top:14px;border-top:1px solid var(--border)">
+      <div style="font-size:13px;font-weight:700;margin-bottom:10px">Breakdown — ${mLabel}</div>
+      ${catRows || '<p style="font-size:13px;color:var(--muted)">No data for this month.</p>'}
+    </div>`;
+}
+
 
 function exportReport() {
   renderReport();
@@ -2933,7 +3838,7 @@ function showView(name, btn) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.getElementById('view-'+name).classList.add('active');
   btn.classList.add('active');
-  if (name === 'report')   renderReport();
+  if (name === 'report') { renderReport(); if (spendVisible) renderSpendChart(); }
   if (name === 'shopping') renderShoppingList();
   if (name === 'savings')  renderSavingsView();
 }
@@ -3125,7 +4030,7 @@ function renderShoppingList() {
         : '';
 
       return `<div class="shopping-item ${urgency}" id="si-${item.id}">
-        <div>
+        <div style="flex:1;min-width:0">
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <span class="shopping-item-name">${esc(item.name)}</span>
             ${rating}
@@ -3137,9 +4042,8 @@ function renderShoppingList() {
             ${item.cadence==='bulk'?'<span class="shopping-meta-pill">📦 Bulk buy</span>':''}
           </div>
           <div class="shopping-links">
-            ${buyLink}
-            ${altLinks}
-            ${poorRating}
+            ${buyLink}${altLinks}${poorRating}
+            <button class="btn btn-ghost btn-sm" style="font-size:12px;color:var(--ok);border-color:var(--ok)" onclick="quickLogFromShopping('${item.id}')">✓ Bought</button>
           </div>
         </div>
         <input type="checkbox" class="shopping-checkbox" title="Mark as bought" onchange="toggleShoppingCheck('${item.id}',this)">
@@ -3200,6 +4104,12 @@ function openAddModal() {
   editingId = null;
   document.getElementById('item-modal-title').textContent = 'Add Item';
   document.getElementById('item-modal-subtitle').textContent = 'Track a new consumable in your stockroom.';
+  // Always show edit form for new items
+  document.getElementById('item-readonly-view').style.display = 'none';
+  document.getElementById('item-edit-view').style.display = 'block';
+  tempStorePrices = [];
+  renderTempStorePrices();
+  document.getElementById('store-prices-section').style.display = 'none';
   document.getElementById('f-name').value = '';
   document.getElementById('f-category').value = 'Kitchen';
   document.getElementById('f-cadence').value = 'monthly';
@@ -3228,8 +4138,31 @@ function openEditModal(id) {
   const item = items.find(i => i.id === id);
   if (!item) return;
   editingId = id;
-  document.getElementById('item-modal-title').textContent = 'Edit Item';
-  document.getElementById('item-modal-subtitle').textContent = 'Editing: ' + item.name;
+  document.getElementById('item-modal-title').textContent = 'Item Details';
+  document.getElementById('item-modal-subtitle').textContent = item.name;
+
+  // Populate readonly view
+  document.getElementById('ro-category').textContent = item.category || 'Other';
+  document.getElementById('ro-name').textContent = item.name;
+  const lastLog = item.logs?.at(-1);
+  const metaParts = [];
+  if (item.cadence === 'bulk') metaParts.push('📦 Bulk');
+  else metaParts.push('🗓️ Monthly');
+  if (item.qty) metaParts.push(`${item.qty} unit${item.qty !== 1 ? 's' : ''} per purchase`);
+  if (item.months) metaParts.push(`${item.months} month${item.months !== 1 ? 's' : ''} supply`);
+  if (lastLog?.price) metaParts.push(`Last price: ${lastLog.price}`);
+  document.getElementById('ro-meta').textContent = metaParts.join(' · ');
+  document.getElementById('ro-store').textContent = item.store ? `🏪 ${item.store}` : '';
+
+  // Show readonly, hide edit form
+  document.getElementById('item-readonly-view').style.display = 'block';
+  document.getElementById('item-edit-view').style.display = 'none';
+  // Load store prices
+  tempStorePrices = JSON.parse(JSON.stringify(item.storePrices || []));
+  renderTempStorePrices();
+  if (tempStorePrices.length) document.getElementById('store-prices-section').style.display = 'block';
+
+  // Pre-populate edit form fields (ready for when user clicks Edit)
   document.getElementById('f-name').value = item.name;
   document.getElementById('f-category').value = item.category||'Kitchen';
   document.getElementById('f-cadence').value = item.cadence||'monthly';
@@ -3266,51 +4199,7 @@ function openLogModal(id) {
   document.getElementById('log-store').value = item.store || urlToStoreName(item.url||'') || '';
   document.getElementById('log-started-using').value = '';
 
-  const histWrap = document.getElementById('log-history');
-  const histEntries = document.getElementById('log-history-entries');
-  if (item.logs && item.logs.length) {
-    histWrap.style.display = 'block';
-    const pricedLogs = [...item.logs].filter(l => l.price).map(l => parsePriceValue(l.price)).filter(p => p !== null);
-    const minPrice = pricedLogs.length ? Math.min(...pricedLogs) : null;
-    const maxPrice = pricedLogs.length ? Math.max(...pricedLogs) : null;
-
-    histEntries.innerHTML = [...item.logs].reverse().slice(0,8).map((l, i, arr) => {
-      const thisPrice = parsePriceValue(l.price);
-      const prevLog = arr[i + 1]; // next in reversed array = previous purchase
-      const prevPrice = prevLog ? parsePriceValue(prevLog.price) : null;
-      let priceTrendEl = '';
-      if (thisPrice !== null && prevPrice !== null) {
-        const diff = thisPrice - prevPrice;
-        if (Math.abs(diff) >= 0.01) {
-          priceTrendEl = diff > 0
-            ? `<span style="color:var(--danger);font-size:10px;font-family:var(--mono)">↑</span>`
-            : `<span style="color:var(--ok);font-size:10px;font-family:var(--mono)">↓</span>`;
-        }
-      }
-      const isCheapest = thisPrice !== null && thisPrice === minPrice && pricedLogs.length > 1;
-      const isMostExp  = thisPrice !== null && thisPrice === maxPrice && pricedLogs.length > 1 && minPrice !== maxPrice;
-      return `<div class="log-entry">
-        <span style="color:var(--muted);font-size:12px">${esc(l.store)||'—'}</span>
-        <span style="color:var(--muted);font-family:var(--mono);font-size:11px">${fmtDate(l.date)}</span>
-        <span style="font-family:var(--mono);font-size:12px;display:flex;align-items:center;gap:4px">
-          ×${l.qty}
-          ${l.price ? `<span style="color:${isCheapest?'var(--ok)':isMostExp?'var(--danger)':'var(--text)'};font-weight:700">${esc(l.price)}</span>${priceTrendEl}${isCheapest?'<span title="Cheapest price" style="font-size:10px">🏷</span>':''}` : ''}
-        </span>
-      </div>`;
-    }).join('');
-
-    // Summary line if prices available
-    if (pricedLogs.length >= 2) {
-      const avg = (pricedLogs.reduce((a,b)=>a+b,0) / pricedLogs.length).toFixed(2);
-      histEntries.innerHTML += `<div style="margin-top:8px;padding-top:8px;border-top:1px solid var(--border);font-size:11px;color:var(--muted);font-family:var(--mono);display:flex;gap:16px">
-        <span>avg £${avg}</span>
-        <span style="color:var(--ok)">low £${minPrice.toFixed(2)}</span>
-        <span style="color:var(--danger)">high £${maxPrice.toFixed(2)}</span>
-      </div>`;
-    }
-  } else {
-    histWrap.style.display = 'none';
-  }
+  renderLogHistory(item);
   openModal('log-modal');
 }
 
@@ -3337,7 +4226,8 @@ function saveItem() {
       item.notes        = document.getElementById('f-notes').value.trim();
       item.startedUsing = startedUsing;
       item.rating       = currentRating || null;
-      item.imageUrl     = pendingImageUrl || item.imageUrl || null;
+      item.imageUrl    = pendingImageUrl || item.imageUrl || null;
+      item.storePrices = tempStorePrices.filter(sp => sp.store || sp.price);
 
       // Update the most recent log entry's date and qty
       const lastDate  = document.getElementById('f-last-date').value;
@@ -3372,6 +4262,7 @@ function saveItem() {
       startedUsing,
       rating:       currentRating || null,
       imageUrl:     pendingImageUrl || null,
+      storePrices:  tempStorePrices.filter(sp => sp.store || sp.price),
       logs:         lastDate ? [{ id:uid(), date:lastDate, qty:lastQty, price:lastPrice, store:storeVal }] : [],
       updatedAt:    new Date().toISOString(),
     });
@@ -3403,7 +4294,14 @@ function saveLog() {
   closeModal('log-modal');
   renderAll();
   toast('Purchase logged ✓');
-  if (driveConnected) setTimeout(syncAll, 400);
+  setTimeout(syncAll, 400);
+  // If opened from shopping list, switch back to it
+  const returnView = sessionStorage.getItem('log_return_view');
+  if (returnView) {
+    sessionStorage.removeItem('log_return_view');
+    const tab = [...document.querySelectorAll('.tab')].find(t => t.textContent.includes('Shopping'));
+    if (tab) showView('shopping', tab);
+  }
 }
 
 function deleteItem(id) {
@@ -4082,15 +4980,12 @@ function init() {
 
   updateSyncUI();
   renderAll();
-  // Sync immediately on load to catch any changes made on other devices
-  setTimeout(() => {
-    lastAutoSync = Date.now();
-    checkCloudAhead();
-  }, 1500);
-  // Stamp legacy items and sync
+  loadNotifSettings();
+  // Sync immediately on load
+  setTimeout(() => { lastAutoSync = Date.now(); checkCloudAhead(); }, 1500);
   if (migrated) setTimeout(syncAll, 1500);
-  // Check if a scheduled reminder is due
   setTimeout(checkScheduledEmail, 2000);
+  setTimeout(checkLowStockNotifications, 3000);
 }
 
 init();
