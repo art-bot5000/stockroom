@@ -236,6 +236,24 @@
   /* ── CARD NOTES ── */
   .card-notes { font-size:12px; color:var(--muted); font-style:italic; margin-bottom:8px; line-height:1.5; padding:6px 8px; background:var(--surface2); border-radius:6px; border-left:2px solid var(--border); }
 
+  /* ── COMPACT VIEW ── */
+  .compact-view .item-card { padding:10px 14px; }
+  .compact-view .item-card .card-meta,
+  .compact-view .item-card .card-star-rating,
+  .compact-view .item-card .card-rating-label,
+  .compact-view .item-card .card-notes,
+  .compact-view .item-card .card-link,
+  .compact-view .item-card .log-btn,
+  .compact-view .item-card .card-image,
+  .compact-view .item-card .swipe-hint,
+  .compact-view .item-card [class*="insight"],
+  .compact-view .item-card [class*="price-trend"],
+  .compact-view .item-card .tag-filter-chip,
+  .compact-view .item-card .item-tag { display:none !important; }
+  .compact-view .item-card .stock-bar-wrap { margin-bottom:6px; }
+  .compact-view .items-grid { grid-template-columns: 1fr; gap:6px; }
+  .compact-view .item-card .card-name { font-size:14px; margin-bottom:4px; }
+
   /* ── INCOMPLETE ITEMS ── */
   .incomplete-card { background:var(--surface); border:1px dashed rgba(232,168,56,0.4); border-radius:12px; padding:12px 14px; display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:8px; }
   .incomplete-card .inc-name { font-size:14px; font-weight:600; color:var(--text); }
@@ -480,7 +498,7 @@
 
 <!-- ═══ HEADER ═══ -->
 <div id="app-header">
-  <div class="logo">STOCKROOM <span>/ HOUSEHOLD TRACKER</span></div>
+  <div class="logo" style="cursor:pointer" onclick="openProfilePicker()" title="Switch household profile">STOCKROOM <span id="profile-label">/ HOUSEHOLD TRACKER</span></div>
   <div style="display:flex;align-items:center;gap:8px">
     <div id="sync-pill" class="sync-pill pending">
       <div class="sync-dot"></div>
@@ -556,6 +574,7 @@
           <option value="rating">↕ Sort: Rating</option>
           <option value="added">↕ Sort: Date added</option>
         </select>
+        <button id="compact-toggle-btn" class="btn btn-ghost btn-sm" onclick="toggleCompactView()" title="Toggle compact view" style="padding:5px 8px">⊟</button>
       </div>
 
       <div id="filter-panel" style="display:none;flex-direction:column;gap:8px;margin-bottom:10px;padding:12px;background:var(--surface);border:1px solid var(--border);border-radius:10px">
@@ -999,7 +1018,8 @@
           <label>Product URL</label>
           <div style="display:flex;gap:8px;align-items:center">
             <input type="url" id="f-url" placeholder="https://amazon.co.uk/..." oninput="autoFillStore()" style="flex:1">
-            <button type="button" class="btn btn-ghost btn-sm" onclick="fetchProductImage()" id="fetch-img-btn" title="Search for product image by name">🖼 Find Image</button>
+            <button type="button" class="btn btn-ghost btn-sm" onclick="fetchProductImage()" id="fetch-img-btn" title="Search for product image by name">🖼 Find</button>
+            <button type="button" class="btn btn-ghost btn-sm" onclick="openCameraModal()" title="Take a photo of the product">📷</button>
           </div>
           <div class="img-preview-wrap" id="img-preview-wrap" style="display:none">
             <img id="img-preview" class="img-preview" src="" alt="Product image">
@@ -1014,6 +1034,8 @@
           <input type="text" id="f-store" placeholder="e.g. Costco, Waitrose, Local Pharmacy..." oninput="this.dataset.manual=this.value?'1':''">
         </div>
         <div class="field form-full"><label>Notes</label><input type="text" id="f-notes" placeholder="Any notes about this item..."></div>
+        <div class="field"><label>Expiry date <span style="font-weight:400;color:var(--muted)">(optional)</span></label><input type="date" id="f-expiry"></div>
+        <div class="field"><label>Warn threshold override <span style="font-weight:400;color:var(--muted)">(% — leave blank to use global)</span></label><input type="number" id="f-threshold" min="5" max="80" step="5" placeholder="e.g. 30"></div>
         <div class="field form-full">
           <label>Product Rating</label>
           <div style="display:flex;align-items:center;gap:14px;margin-top:4px">
@@ -1062,6 +1084,68 @@
         <button class="btn btn-ghost" onclick="closeModal('item-modal')">Cancel</button>
         <button class="btn btn-primary" onclick="saveItem()">Save Item</button>
       </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ PROFILE PICKER MODAL ═══ -->
+<div class="modal-backdrop" id="profile-modal">
+  <div class="modal" style="max-width:420px">
+    <h2>🏠 Household Profiles</h2>
+    <p class="subtitle">Switch between different stockrooms — home, holiday cottage, office, etc.</p>
+    <div id="profile-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px"></div>
+    <div style="display:flex;gap:8px;margin-bottom:4px">
+      <input type="text" id="new-profile-name" placeholder="New profile name…"
+        style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-family:var(--sans);font-size:13px;outline:none">
+      <button class="btn btn-primary btn-sm" onclick="addProfile()">Add</button>
+    </div>
+    <div class="modal-footer" style="margin-top:16px">
+      <button class="btn btn-ghost" onclick="closeModal('profile-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ CAMERA PHOTO MODAL ═══ -->
+<div class="modal-backdrop" id="camera-modal">
+  <div class="modal" style="max-width:420px">
+    <h2>📷 Take Photo</h2>
+    <p class="subtitle">Take a photo of the product to use as the item image.</p>
+    <div style="position:relative;border-radius:10px;overflow:hidden;background:#000;margin-bottom:12px;aspect-ratio:4/3">
+      <video id="camera-video" autoplay playsinline muted style="width:100%;display:block"></video>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeCameraModal()">Cancel</button>
+      <button class="btn btn-primary" onclick="capturePhoto()">📸 Capture</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ ITEM ANALYTICS MODAL ═══ -->
+<div class="modal-backdrop" id="analytics-modal">
+  <div class="modal" style="max-width:480px">
+    <h2 id="analytics-title">📊 Usage Analytics</h2>
+    <div id="analytics-content" style="margin-bottom:16px"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('analytics-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ SHARE ITEM MODAL ═══ -->
+<div class="modal-backdrop" id="share-modal">
+  <div class="modal" style="max-width:420px">
+    <h2>↗️ Share Item</h2>
+    <p class="subtitle" id="share-modal-subtitle"></p>
+    <!-- Canvas preview of the share card -->
+    <canvas id="share-canvas" style="width:100%;border-radius:12px;display:block;margin-bottom:14px"></canvas>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:4px">
+      <button class="btn btn-primary btn-xl full" id="share-image-btn" onclick="doShareImage()">📤 Share as image</button>
+      <button class="btn btn-ghost btn-xl full" id="share-link-btn" onclick="doShareItemLink()">🔗 Share item link</button>
+      <button class="btn btn-ghost btn-xl full" id="share-buy-btn" onclick="doShareLink()">🛒 Share buy link</button>
+      <button class="btn btn-ghost btn-xl full" onclick="doShareText()">📋 Copy as text</button>
+    </div>
+    <div class="modal-footer" style="margin-top:12px">
+      <button class="btn btn-ghost" onclick="closeModal('share-modal')">Close</button>
     </div>
   </div>
 </div>
@@ -1288,12 +1372,14 @@ let items = [];
 let settings = { threshold: 20, country: 'GB' };
 let editingId = null;
 let loggingId = null;
-let activeFilter = 'all';      // status: all | critical | warn | ok
-let activeCadence = 'all';    // cadence: all | monthly | bulk
-let activeStore = 'all';      // store name or 'all'
-let activeRating = 0;         // 0=all, -1=unrated, 1-5=exact rating
-let currentRating = 0;        // rating being set in modal
+let activeFilter = 'all';
+let activeCadence = 'all';
+let activeStore = 'all';
+let activeRating = 0;
+let currentRating = 0;
 let wizardCountry = 'GB';
+let compactView = false;
+let activeProfile = 'default'; // household profile key
 
 // Drive state
 let accessToken    = null;
@@ -1316,6 +1402,17 @@ function closeModal(id) { document.getElementById(id).classList.remove('open'); 
 const uid = () => 'id_' + Date.now() + '_' + Math.random().toString(36).slice(2,7);
 const today = () => new Date().toISOString().split('T')[0];
 const fmtDate = d => d ? new Date(d+'T12:00:00').toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : '—';
+
+function timeAgo(dateStr) {
+  if (!dateStr) return '—';
+  const days = Math.floor((Date.now() - new Date(dateStr+'T12:00:00')) / 86400000);
+  if (days === 0) return 'today';
+  if (days === 1) return 'yesterday';
+  if (days < 7)  return `${days}d ago`;
+  if (days < 30) return `${Math.floor(days/7)}w ago`;
+  if (days < 365) return `${Math.floor(days/30)}mo ago`;
+  return `${Math.floor(days/365)}y ago`;
+}
 
 function calcStock(item) {
   if (!item.logs || !item.logs.length) return null;
@@ -1743,6 +1840,45 @@ function resetLastSent() {
   toast('Schedule reset — next send will be at your start date/time');
 }
 
+function handleUnsubscribe() {
+  // Switch to settings tab so the user can see the email card
+  const settingsTab = [...document.querySelectorAll('.tab')].find(t => t.textContent.includes('Settings'));
+  if (settingsTab) showView('settings', settingsTab);
+
+  // Show a confirmation prompt
+  setTimeout(() => {
+    if (!confirm('Stop scheduled email reminders from STOCKROOM?\n\nYou can re-enable them any time in Settings → Email Reminders.')) return;
+
+    // Clear schedule locally
+    settings.emailStartDate = null;
+    settings.emailStartTime = null;
+    settings.emailLastSent  = null;
+    settings.emailInterval  = 0;
+    try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e){}
+
+    // Clear schedule on Worker too
+    if (WORKER_URL) {
+      fetch(`${WORKER_URL}/unsubscribe`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+      }).catch(() => {});
+    }
+
+    renderAll();
+    toast('Email reminders disabled ✓');
+
+    // Scroll to email settings card so they can see it
+    setTimeout(() => {
+      const emailCard = document.querySelector('#view-settings .settings-card h3');
+      let card = null;
+      document.querySelectorAll('#view-settings .settings-card h3').forEach(h => {
+        if (h.textContent.includes('Email')) card = h.closest('.settings-card');
+      });
+      if (card) card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }, 300);
+  }, 400);
+}
+
 function checkScheduledEmail() {
   const interval = settings.emailInterval ?? 30;
   if (!settings.email || interval === 0 || !settings.emailStartDate) return;
@@ -2078,10 +2214,432 @@ function renderTempStorePrices() {
 
 
 // ═══════════════════════════════════════════
-//  SCAN CHOOSER
+//  SHARE ITEM
 // ═══════════════════════════════════════════
+let sharingItem = null;
+
+function shareItem(id) {
+  const item = items.find(i => i.id === id);
+  if (!item) return;
+  sharingItem = item;
+
+  const subtitle = document.getElementById('share-modal-subtitle');
+  if (subtitle) subtitle.textContent = item.name;
+
+  drawShareCard(item);
+  openModal('share-modal');
+}
+
+function drawShareCard(item) {
+  const canvas = document.getElementById('share-canvas');
+  if (!canvas) return;
+
+  const W = 600, H = 340;
+  canvas.width  = W;
+  canvas.height = H;
+  const ctx = canvas.getContext('2d');
+
+  // Background gradient
+  const grad = ctx.createLinearGradient(0, 0, W, H);
+  grad.addColorStop(0, '#0f1117');
+  grad.addColorStop(1, '#1a1d27');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Subtle amber glow top-left
+  const glow = ctx.createRadialGradient(0, 0, 0, 0, 0, 260);
+  glow.addColorStop(0, 'rgba(232,168,56,0.07)');
+  glow.addColorStop(1, 'rgba(232,168,56,0)');
+  ctx.fillStyle = glow;
+  ctx.fillRect(0, 0, W, H);
+
+  // Border
+  ctx.strokeStyle = '#2e3350';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(0.5, 0.5, W - 1, H - 1);
+
+  // ── App branding header ──
+  const headerH = 44;
+  ctx.fillStyle = '#1a1d27';
+  ctx.fillRect(0, 0, W, headerH);
+  ctx.strokeStyle = '#2e3350';
+  ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, headerH); ctx.lineTo(W, headerH); ctx.stroke();
+
+  // Logo mark
+  ctx.fillStyle = '#e8a838';
+  ctx.font = 'bold 13px monospace';
+  ctx.fillText('📦 STOCKROOM', 20, 28);
+
+  // Tagline right
+  ctx.fillStyle = '#7880a0';
+  ctx.font = '11px monospace';
+  ctx.textAlign = 'right';
+  ctx.fillText('Household Consumables Tracker', W - 20, 28);
+  ctx.textAlign = 'left';
+
+  // ── Product content ──
+  const contentY = headerH + 24;
+
+  // Category chip
+  ctx.fillStyle = 'rgba(120,128,160,0.2)';
+  const catText = (item.category || 'Other').toUpperCase();
+  ctx.font = '10px monospace';
+  const catW = ctx.measureText(catText).width + 16;
+  roundRect(ctx, 20, contentY, catW, 20, 4);
+  ctx.fill();
+  ctx.fillStyle = '#7880a0';
+  ctx.fillText(catText, 28, contentY + 14);
+
+  // Product name — large, wraps up to 2 lines
+  ctx.fillStyle = '#e8eaf2';
+  ctx.font = 'bold 28px system-ui, sans-serif';
+  const nameLines = wrapText(ctx, item.name || '', W - 48);
+  nameLines.slice(0, 2).forEach((line, i) => {
+    ctx.fillText(line, 20, contentY + 46 + i * 36);
+  });
+  const afterName = contentY + 46 + Math.min(nameLines.length, 2) * 36;
+
+  // ── Info pills row ──
+  const pillY = afterName + 16;
+  let pillX = 20;
+
+  const drawPill = (label, value, bg, textCol) => {
+    if (!value) return 0;
+    ctx.font = '11px system-ui, sans-serif';
+    const fullText = `${label}: ${value}`;
+    const pw = ctx.measureText(fullText).width + 20;
+    ctx.fillStyle = bg;
+    ctx.beginPath();
+    ctx.roundRect(pillX, pillY, pw, 24, 12);
+    ctx.fill();
+    ctx.fillStyle = textCol;
+    ctx.fillText(fullText, pillX + 10, pillY + 16);
+    const used = pw + 8;
+    pillX += used;
+    return used;
+  };
+
+  // Last price
+  const history   = getPriceHistory(item);
+  const lastPrice = history.length
+    ? (history[history.length - 1].raw || `£${history[history.length-1].price.toFixed(2)}`)
+    : null;
+  if (lastPrice) drawPill('Price', lastPrice, 'rgba(76,187,138,0.15)', '#4cbb8a');
+
+  // Store
+  if (item.store) drawPill('From', item.store, 'rgba(91,141,238,0.15)', '#5b8dee');
+
+  // Qty
+  if (item.qty && item.qty !== 1) drawPill('Qty', `×${item.qty}`, 'rgba(120,128,160,0.15)', '#7880a0');
+
+  // Rating
+  if (item.rating) {
+    const stars = '★'.repeat(item.rating) + '☆'.repeat(5 - item.rating);
+    drawPill('', stars, 'rgba(232,168,56,0.15)', '#e8a838');
+  }
+
+  // ── Store prices comparison ──
+  const storePrices = (item.storePrices || []).filter(sp => sp.store && sp.price);
+  if (storePrices.length > 1) {
+    const priceY = pillY + 40;
+    ctx.fillStyle = '#7880a0';
+    ctx.font = '10px monospace';
+    ctx.fillText('PRICE COMPARISON', 20, priceY);
+    let spX = 20;
+    storePrices.slice(0, 4).forEach(sp => {
+      ctx.font = '11px system-ui, sans-serif';
+      const txt = `${sp.store}: ${sp.price}`;
+      const pw  = ctx.measureText(txt).width + 16;
+      ctx.fillStyle = 'rgba(46,51,80,0.8)';
+      ctx.beginPath();
+      ctx.roundRect(spX, priceY + 8, pw, 22, 6);
+      ctx.fill();
+      ctx.fillStyle = '#e8eaf2';
+      ctx.fillText(txt, spX + 8, priceY + 23);
+      spX += pw + 6;
+    });
+  }
+
+  // ── Notes ──
+  if (item.notes) {
+    const notesY = H - 60;
+    ctx.fillStyle = 'rgba(120,128,160,0.12)';
+    ctx.fillRect(20, notesY, W - 40, 26);
+    ctx.fillStyle = '#7880a0';
+    ctx.font = 'italic 12px system-ui, sans-serif';
+    const noteTrunc = item.notes.length > 60 ? item.notes.slice(0, 57) + '…' : item.notes;
+    ctx.fillText(`💬 ${noteTrunc}`, 28, notesY + 17);
+  }
+
+  // ── Bottom bar ──
+  const barY = H - 30;
+  ctx.fillStyle = '#0f1117';
+  ctx.fillRect(0, barY, W, 30);
+  ctx.strokeStyle = '#2e3350';
+  ctx.beginPath(); ctx.moveTo(0, barY); ctx.lineTo(W, barY); ctx.stroke();
+
+  // Buy URL
+  if (item.url) {
+    try {
+      const domain = new URL(item.url).hostname.replace('www.', '');
+      ctx.fillStyle = '#5b8dee';
+      ctx.font = '11px monospace';
+      ctx.fillText(`🛒 ${domain}`, 20, barY + 20);
+    } catch(e) {}
+  }
+
+  // App URL right
+  ctx.fillStyle = '#4a5070';
+  ctx.font = '10px monospace';
+  ctx.textAlign = 'right';
+  ctx.fillText('art-bot5000.github.io/stockroom', W - 20, barY + 20);
+  ctx.textAlign = 'left';
+}
+
+function wrapText(ctx, text, maxWidth) {
+  const words = text.split(' ');
+  const lines = [];
+  let current = '';
+  for (const word of words) {
+    const test = current ? current + ' ' + word : word;
+    if (ctx.measureText(test).width > maxWidth && current) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = test;
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
+}
+
+function roundRect(ctx, x, y, w, h, radii) {
+  const [tl, tr, br, bl] = Array.isArray(radii) ? radii : [radii, radii, radii, radii];
+  ctx.moveTo(x + tl, y);
+  ctx.lineTo(x + w - tr, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + tr);
+  ctx.lineTo(x + w, y + h - br);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - br, y + h);
+  ctx.lineTo(x + bl, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - bl);
+  ctx.lineTo(x, y + tl);
+  ctx.quadraticCurveTo(x, y, x + tl, y);
+}
+
+async function doShareImage() {
+  const canvas = document.getElementById('share-canvas');
+  if (!canvas || !sharingItem) return;
+
+  canvas.toBlob(async blob => {
+    const file = new File([blob], `${sharingItem.name.replace(/\s+/g, '-')}.png`, { type: 'image/png' });
+    const shareData = {
+      title: sharingItem.name,
+      text:  buildShareText(sharingItem),
+      files: [file],
+    };
+
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share(shareData);
+        closeModal('share-modal');
+      } catch(e) {
+        if (e.name !== 'AbortError') downloadShareImage(canvas, sharingItem);
+      }
+    } else {
+      // Fallback — download the image
+      downloadShareImage(canvas, sharingItem);
+    }
+  }, 'image/png');
+}
+
+function downloadShareImage(canvas, item) {
+  const a = document.createElement('a');
+  a.download = `${item.name.replace(/\s+/g, '-')}.png`;
+  a.href = canvas.toDataURL('image/png');
+  a.click();
+  toast('Image saved — share from your downloads');
+}
+
+async function doShareItemLink() {
+  if (!sharingItem) return;
+  const link = generateItemShareLink(sharingItem);
+  const shareData = {
+    title: `${sharingItem.name} — via STOCKROOM`,
+    text:  `I'm using ${sharingItem.name} in STOCKROOM — here's the item so you can track it too:`,
+    url:   link,
+  };
+  if (navigator.share) {
+    try { await navigator.share(shareData); closeModal('share-modal'); return; }
+    catch(e) { if (e.name === 'AbortError') return; }
+  }
+  fallbackCopy(link);
+}
+
+async function doShareLink() {
+  const url = sharingItem?.url || window.location.href;
+  const shareData = { title: sharingItem?.name, text: buildShareText(sharingItem), url };
+
+  if (navigator.share) {
+    try { await navigator.share(shareData); closeModal('share-modal'); }
+    catch(e) { if (e.name !== 'AbortError') fallbackCopy(url); }
+  } else {
+    fallbackCopy(url);
+  }
+}
+
+async function doShareText() {
+  if (!sharingItem) return;
+  const text = buildShareText(sharingItem);
+  fallbackCopy(text);
+}
+
+function buildShareText(item) {
+  if (!item) return '';
+  const history   = getPriceHistory(item);
+  const lastPrice = history.length ? (history[history.length-1].raw || `£${history[history.length-1].price.toFixed(2)}`) : null;
+  const storePrices = (item.storePrices || []).filter(sp => sp.store && sp.price);
+
+  const lines = [`📦 ${item.name}`];
+  if (item.category) lines.push(`Category: ${item.category}`);
+  if (lastPrice)     lines.push(`Price: ${lastPrice}`);
+  if (item.store)    lines.push(`Available at: ${item.store}`);
+  if (storePrices.length > 1) {
+    lines.push('Price comparison:');
+    storePrices.forEach(sp => lines.push(`  ${sp.store}: ${sp.price}`));
+  }
+  if (item.qty && item.qty !== 1) lines.push(`Pack size: ×${item.qty}`);
+  if (item.rating)   lines.push(`Rated: ${'★'.repeat(item.rating)}${'☆'.repeat(5 - item.rating)}`);
+  if (item.notes)    lines.push(`Note: ${item.notes}`);
+  if (item.url)      lines.push(`Buy here: ${item.url}`);
+  lines.push('');
+  lines.push('Shared via STOCKROOM — art-bot5000.github.io/stockroom');
+  return lines.join('\n');
+}
+
+function fallbackCopy(text) {
+  navigator.clipboard?.writeText(text)
+    .then(() => { toast('Copied to clipboard ✓'); closeModal('share-modal'); })
+    .catch(() => {
+      // Manual copy fallback
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand('copy');
+      document.body.removeChild(ta);
+      toast('Copied to clipboard ✓');
+      closeModal('share-modal');
+    });
+}
+
+
 let scannedProductName  = '';
 let scannedProductImage = null;
+
+// ═══════════════════════════════════════════
+//  ITEM SHARE — SHARE & RECEIVE VIA URL
+// ═══════════════════════════════════════════
+function generateItemShareLink(item) {
+  const payload = {
+    v: 1,
+    name:        item.name,
+    category:    item.category,
+    cadence:     item.cadence,
+    qty:         item.qty,
+    months:      item.months,
+    url:         item.url   || '',
+    store:       item.store || '',
+    notes:       item.notes || '',
+    rating:      item.rating || null,
+    storePrices: (item.storePrices || []).filter(sp => sp.store && sp.price),
+  };
+  const encoded = btoa(unescape(encodeURIComponent(JSON.stringify(payload))));
+  return `https://art-bot5000.github.io/stockroom/?item=${encoded}`;
+}
+
+function checkIncomingItem() {
+  const params  = new URLSearchParams(location.search);
+  const encoded = params.get('item');
+  if (!encoded) return false;
+  history.replaceState(null, '', location.pathname);
+  try {
+    const payload = JSON.parse(decodeURIComponent(escape(atob(encoded))));
+    if (!payload?.name) return false;
+    setTimeout(() => showIncomingItemPrompt(payload), 700);
+    return true;
+  } catch(e) { return false; }
+}
+
+function showIncomingItemPrompt(payload) {
+  const priceStr = (payload.storePrices || []).map(sp => `${sp.store}: ${sp.price}`).join(' · ');
+  let domainStr = '';
+  try { if (payload.url) domainStr = new URL(payload.url).hostname.replace('www.', ''); } catch(e){}
+
+  const el = document.createElement('div');
+  el.id = 'incoming-item-overlay';
+  el.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:9999;display:flex;align-items:flex-end;justify-content:center;padding:20px';
+  el.onclick = e => { if (e.target === el) closeIncomingItem(); };
+  el.innerHTML = `
+    <div style="background:var(--surface);border-radius:16px 16px 12px 12px;padding:24px;max-width:440px;width:100%;border:1px solid var(--border);box-shadow:0 -4px 32px rgba(0,0,0,0.4)">
+      <div style="font-size:11px;font-weight:700;color:var(--accent);font-family:var(--mono);letter-spacing:1px;margin-bottom:8px">📦 ITEM SHARED WITH YOU</div>
+      <div style="font-size:20px;font-weight:700;color:var(--text);margin-bottom:4px">${esc(payload.name)}</div>
+      <div style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.8">
+        ${payload.category ? `<span style="font-family:var(--mono)">${esc(payload.category)}</span>` : ''}
+        ${payload.store    ? ` · From <strong style="color:var(--text)">${esc(payload.store)}</strong>` : ''}
+        ${priceStr         ? ` · ${esc(priceStr)}` : ''}
+        ${payload.months   ? ` · ${payload.months}mo supply` : ''}
+      </div>
+      ${payload.notes ? `<div style="font-size:12px;color:var(--muted);font-style:italic;margin-bottom:14px;padding:8px;background:var(--surface2);border-radius:6px">💬 ${esc(payload.notes)}</div>` : ''}
+      ${domainStr ? `<div style="margin-bottom:14px"><a href="${esc(payload.url)}" target="_blank" rel="noopener" style="font-size:12px;color:var(--accent2)">🛒 ${esc(domainStr)} ↗</a></div>` : ''}
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">
+        <button class="btn btn-primary" style="flex:1" id="incoming-add-btn">+ Add to my stockroom</button>
+        <button class="btn btn-ghost" id="incoming-edit-btn">✏️ Add &amp; set up</button>
+        <button class="btn btn-ghost btn-sm" onclick="closeIncomingItem()">Dismiss</button>
+      </div>
+      <p style="font-size:11px;color:var(--muted);text-align:center">Shared via STOCKROOM · <a href="https://art-bot5000.github.io/stockroom/" style="color:var(--muted)">art-bot5000.github.io/stockroom</a></p>
+    </div>`;
+  document.body.appendChild(el);
+  document.getElementById('incoming-add-btn').onclick  = () => addIncomingItem(payload, false);
+  document.getElementById('incoming-edit-btn').onclick = () => addIncomingItem(payload, true);
+}
+
+function closeIncomingItem() {
+  const el = document.getElementById('incoming-item-overlay');
+  if (el) el.remove();
+}
+
+function addIncomingItem(payload, openEdit) {
+  closeIncomingItem();
+  const newItem = {
+    id:          uid(),
+    name:        payload.name,
+    category:    payload.category  || 'Other',
+    cadence:     payload.cadence   || 'monthly',
+    qty:         payload.qty       || 1,
+    months:      payload.months    || 1,
+    url:         payload.url       || '',
+    store:       payload.store     || '',
+    notes:       payload.notes     || '',
+    rating:      payload.rating    || null,
+    storePrices: payload.storePrices || [],
+    imageUrl:    null,
+    logs:        [],
+    quickAdded:  false,
+    updatedAt:   new Date().toISOString(),
+  };
+  items.push(newItem);
+  saveData();
+  renderAll();
+  setTimeout(syncAll, 400);
+  if (openEdit) {
+    setTimeout(() => { openEditModal(newItem.id); enableItemEdit(); }, 300);
+  } else {
+    toast(`"${payload.name}" added ✓`);
+  }
+}
 
 function openScanChooser(name, imageUrl) {
   scannedProductName  = name;
@@ -2118,6 +2676,9 @@ function scanChooserFullAdd() {
 
 
 function handleURLAction() {
+  // Check for incoming shared item first
+  if (checkIncomingItem()) return;
+
   const params = new URLSearchParams(location.search);
   const action = params.get('action');
   if (!action) return;
@@ -2137,6 +2698,8 @@ function handleURLAction() {
     } else if (action === 'scan') {
       sessionStorage.setItem('barcode_target', 'scan-chooser');
       openBarcodeScanner();
+    } else if (action === 'unsubscribe') {
+      handleUnsubscribe();
     } else if (action === 'share') {
       // Share target — pre-fill quick add with shared text/title
       const title = params.get('title') || '';
@@ -2348,6 +2911,334 @@ function scrollToIncomplete() {
 function clearQuickAddedFlag(id) {
   const item = items.find(i => i.id === id);
   if (item) item.quickAdded = false;
+}
+
+// ═══════════════════════════════════════════
+//  DELIVERY TRACKING — ORDERED FLAG
+// ═══════════════════════════════════════════
+function markOrdered(id) {
+  const item = items.find(i => i.id === id);
+  if (!item) return;
+  item.ordered   = true;
+  item.orderedAt = new Date().toISOString();
+  touchItem(item);
+  saveData();
+  renderAll();
+  setTimeout(syncAll, 400);
+  toast(`📦 ${item.name} marked as ordered`);
+}
+
+function unmarkOrdered(id) {
+  const item = items.find(i => i.id === id);
+  if (!item) return;
+  item.ordered   = false;
+  item.orderedAt = null;
+  touchItem(item);
+  saveData();
+  renderAll();
+  setTimeout(syncAll, 400);
+  toast('Removed ordered status');
+}
+
+// ═══════════════════════════════════════════
+//  30 — COMPACT VIEW
+// ═══════════════════════════════════════════
+function toggleCompactView() {
+  compactView = !compactView;
+  const grid = document.getElementById('items-grid');
+  const btn  = document.getElementById('compact-toggle-btn');
+  if (grid) grid.classList.toggle('compact-view', compactView);
+  if (btn)  btn.textContent = compactView ? '⊞' : '⊟';
+  try { localStorage.setItem('stockroom_compact', compactView ? '1' : ''); } catch(e){}
+}
+
+function loadCompactView() {
+  compactView = !!localStorage.getItem('stockroom_compact');
+  const grid = document.getElementById('items-grid');
+  const btn  = document.getElementById('compact-toggle-btn');
+  if (grid && compactView) grid.classList.add('compact-view');
+  if (btn) btn.textContent = compactView ? '⊞' : '⊟';
+}
+
+// ═══════════════════════════════════════════
+//  19 — HOUSEHOLD PROFILES
+// ═══════════════════════════════════════════
+function getProfiles() {
+  try { return JSON.parse(localStorage.getItem('stockroom_profiles') || '{}'); } catch(e) { return {}; }
+}
+
+function saveProfiles(profiles) {
+  try { localStorage.setItem('stockroom_profiles', JSON.stringify(profiles)); } catch(e){}
+}
+
+function loadProfile(key) {
+  activeProfile = key || 'default';
+  try { localStorage.setItem('stockroom_active_profile', activeProfile); } catch(e){}
+  const profiles = getProfiles();
+  const profile  = profiles[activeProfile];
+  if (profile) {
+    items    = profile.items    || [];
+    settings = { threshold: 20, country: 'GB', ...profile.settings };
+  } else {
+    // First load — migrate existing data into default profile
+    loadData();
+    saveCurrentProfile();
+  }
+  updateProfileLabel();
+  renderAll();
+  updateSyncUI();
+}
+
+function saveCurrentProfile() {
+  const profiles = getProfiles();
+  profiles[activeProfile] = { items: JSON.parse(JSON.stringify(items)), settings };
+  saveProfiles(profiles);
+}
+
+function updateProfileLabel() {
+  const profiles = getProfiles();
+  const name     = profiles[activeProfile]?.name || (activeProfile === 'default' ? 'Home' : activeProfile);
+  const label    = document.getElementById('profile-label');
+  if (label) label.textContent = `/ ${name.toUpperCase()}`;
+}
+
+function openProfilePicker() {
+  renderProfileList();
+  openModal('profile-modal');
+}
+
+function renderProfileList() {
+  const profiles = getProfiles();
+  const list     = document.getElementById('profile-list');
+  if (!list) return;
+
+  // Ensure default profile exists
+  if (!profiles['default']) profiles['default'] = { name: 'Home', items: [], settings: {} };
+
+  list.innerHTML = Object.entries(profiles).map(([key, p]) => {
+    const isActive = key === activeProfile;
+    const count    = (p.items || []).length;
+    return `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:${isActive ? 'rgba(232,168,56,0.1)' : 'var(--surface2)'};border:1px solid ${isActive ? 'rgba(232,168,56,0.4)' : 'var(--border)'};border-radius:10px">
+      <div style="flex:1">
+        <div style="font-size:14px;font-weight:600;color:${isActive ? 'var(--accent)' : 'var(--text)'}">${esc(p.name || key)}${isActive ? ' ✓' : ''}</div>
+        <div style="font-size:11px;color:var(--muted);font-family:var(--mono)">${count} item${count !== 1 ? 's' : ''}</div>
+      </div>
+      ${!isActive ? `<button class="btn btn-ghost btn-sm" onclick="switchProfile('${key}')">Switch</button>` : '<span style="font-size:11px;color:var(--accent)">Active</span>'}
+      ${key !== 'default' ? `<button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="deleteProfile('${key}')">✕</button>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function switchProfile(key) {
+  // Save current before switching
+  saveCurrentProfile();
+  closeModal('profile-modal');
+  loadProfile(key);
+  toast(`Switched to ${getProfiles()[key]?.name || key}`);
+}
+
+function addProfile() {
+  const nameEl = document.getElementById('new-profile-name');
+  const name   = nameEl?.value.trim();
+  if (!name) { toast('Enter a profile name'); return; }
+  const key    = 'profile_' + Date.now();
+  const profiles = getProfiles();
+  profiles[key]  = { name, items: [], settings: { threshold: 20, country: 'GB' } };
+  saveProfiles(profiles);
+  if (nameEl) nameEl.value = '';
+  renderProfileList();
+  toast(`Profile "${name}" created`);
+}
+
+function deleteProfile(key) {
+  if (!confirm('Delete this profile and all its items?')) return;
+  const profiles = getProfiles();
+  delete profiles[key];
+  saveProfiles(profiles);
+  renderProfileList();
+  toast('Profile deleted');
+}
+
+// ═══════════════════════════════════════════
+//  20 — EXPIRY DATES
+// ═══════════════════════════════════════════
+function getExpiryStatus(item) {
+  if (!item.expiry) return null;
+  const daysUntil = Math.floor((new Date(item.expiry + 'T12:00:00') - Date.now()) / 86400000);
+  if (daysUntil < 0)   return { label: 'Expired', color: 'var(--danger)', days: daysUntil };
+  if (daysUntil <= 30) return { label: `Expires in ${daysUntil}d`, color: 'var(--warn)', days: daysUntil };
+  return { label: `Expires ${fmtDate(item.expiry)}`, color: 'var(--muted)', days: daysUntil };
+}
+
+// ═══════════════════════════════════════════
+//  21 — REORDER POINT OVERRIDE
+// ═══════════════════════════════════════════
+function getItemThreshold(item) {
+  return item.thresholdOverride ?? settings.threshold ?? 20;
+}
+
+// Patch getStatus to use per-item threshold
+const _origGetStatus = getStatus;
+// eslint-disable-next-line no-global-assign
+function getStatus(pct, threshold, item) {
+  const t = item ? getItemThreshold(item) : (threshold ?? 20);
+  if (pct === null || pct === undefined) return 'nodata';
+  if (pct <= t / 2) return 'critical';
+  if (pct <= t) return 'warn';
+  return 'ok';
+}
+
+// ═══════════════════════════════════════════
+//  23 — SMART REORDER SUGGESTION
+// ═══════════════════════════════════════════
+function getReorderSuggestion(item) {
+  if (!item.logs || item.logs.length < 2) return null;
+
+  // Average days between purchases
+  const sorted = [...item.logs].sort((a, b) => new Date(a.date) - new Date(b.date));
+  const gaps   = [];
+  for (let i = 1; i < sorted.length; i++) {
+    const gap = (new Date(sorted[i].date) - new Date(sorted[i-1].date)) / 86400000;
+    if (gap > 0) gaps.push(gap);
+  }
+  if (!gaps.length) return null;
+
+  const avgGapDays = gaps.reduce((a,b) => a+b, 0) / gaps.length;
+  const avgQty     = sorted.reduce((a,b) => a + (b.qty || 1), 0) / sorted.length;
+  const totalDays  = (item.months || 1) * 30.5 * (item.qty || 1);
+
+  // How many units to cover until next shop window?
+  const shopWindowDays = Math.min(avgGapDays, 30);
+  const suggestedQty   = Math.ceil((shopWindowDays / totalDays) * (item.qty || 1));
+
+  return {
+    qty: Math.max(1, suggestedQty),
+    shopWindowDays: Math.round(shopWindowDays),
+    avgGapDays: Math.round(avgGapDays),
+  };
+}
+
+// ═══════════════════════════════════════════
+//  35 — USAGE ANALYTICS
+// ═══════════════════════════════════════════
+function openAnalyticsModal(id) {
+  const item = items.find(i => i.id === id);
+  if (!item) return;
+
+  const titleEl   = document.getElementById('analytics-title');
+  const contentEl = document.getElementById('analytics-content');
+  if (!titleEl || !contentEl) return;
+
+  titleEl.textContent = `📊 ${item.name}`;
+
+  if (!item.logs || item.logs.length < 2) {
+    contentEl.innerHTML = `<p style="color:var(--muted);font-size:13px">Not enough purchase history yet. Log at least 2 purchases to see analytics.</p>`;
+    openModal('analytics-modal');
+    return;
+  }
+
+  const sorted = [...item.logs].sort((a,b) => new Date(a.date) - new Date(b.date));
+  const gaps   = [];
+  for (let i = 1; i < sorted.length; i++) {
+    const gap = (new Date(sorted[i].date) - new Date(sorted[i-1].date)) / 86400000;
+    if (gap > 0) gaps.push({ gap: Math.round(gap), date: sorted[i].date });
+  }
+
+  const avgGap  = Math.round(gaps.reduce((a,b) => a+b.gap, 0) / gaps.length);
+  const minGap  = Math.min(...gaps.map(g => g.gap));
+  const maxGap  = Math.max(...gaps.map(g => g.gap));
+  const prices  = sorted.filter(l => l.price).map(l => ({ val: parsePriceValue(l.price), raw: l.price, date: l.date })).filter(p => p.val);
+  const avgPrice = prices.length ? prices.reduce((a,b) => a + b.val, 0) / prices.length : null;
+  const totalSpend = prices.reduce((a,b) => a + b.val, 0);
+
+  const suggestion = getReorderSuggestion(item);
+
+  // Mini gap chart
+  const barW = 100 / gaps.length;
+  const maxG  = Math.max(...gaps.map(g => g.gap), 1);
+  const gapBars = gaps.map(g =>
+    `<div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:2px" title="${g.date}: ${g.gap} days">
+      <div style="width:100%;max-width:32px;height:${Math.round((g.gap/maxG)*60)+4}px;background:var(--accent2);border-radius:3px 3px 0 0;opacity:0.8"></div>
+      <div style="font-size:9px;color:var(--muted);font-family:var(--mono)">${g.gap}d</div>
+    </div>`
+  ).join('');
+
+  contentEl.innerHTML = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">
+      <div style="background:var(--surface2);border-radius:10px;padding:12px">
+        <div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-bottom:4px">AVG RESTOCK</div>
+        <div style="font-size:22px;font-weight:700;color:var(--text)">${avgGap}<span style="font-size:13px;color:var(--muted)">d</span></div>
+        <div style="font-size:11px;color:var(--muted)">range: ${minGap}–${maxGap} days</div>
+      </div>
+      <div style="background:var(--surface2);border-radius:10px;padding:12px">
+        <div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-bottom:4px">TOTAL SPEND</div>
+        <div style="font-size:22px;font-weight:700;color:var(--ok)">£${totalSpend.toFixed(2)}</div>
+        <div style="font-size:11px;color:var(--muted)">${prices.length} purchase${prices.length !== 1 ? 's' : ''}${avgPrice ? ` · avg £${avgPrice.toFixed(2)}` : ''}</div>
+      </div>
+    </div>
+    ${gaps.length > 1 ? `
+    <div style="margin-bottom:16px">
+      <div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-bottom:8px;text-transform:uppercase;letter-spacing:0.5px">Days between restocks</div>
+      <div style="display:flex;align-items:flex-end;gap:3px;height:72px">${gapBars}</div>
+    </div>` : ''}
+    ${suggestion ? `
+    <div style="background:rgba(232,168,56,0.08);border:1px solid rgba(232,168,56,0.2);border-radius:10px;padding:12px;margin-bottom:12px">
+      <div style="font-size:12px;font-weight:700;color:var(--accent);margin-bottom:4px">💡 Smart Reorder Suggestion</div>
+      <div style="font-size:13px;color:var(--text)">Buy <strong>×${suggestion.qty}</strong> — covers your typical ${suggestion.shopWindowDays}-day shop window</div>
+      <div style="font-size:11px;color:var(--muted);margin-top:3px">Based on your avg restock interval of ${suggestion.avgGapDays} days</div>
+    </div>` : ''}
+    <div style="font-size:11px;color:var(--muted);font-family:var(--mono)">
+      First purchased: ${fmtDate(sorted[0].date)} · Total purchases: ${sorted.length}
+    </div>`;
+
+  openModal('analytics-modal');
+}
+
+// ═══════════════════════════════════════════
+//  28 — CAMERA PHOTO
+// ═══════════════════════════════════════════
+let cameraStream = null;
+
+function openCameraModal() {
+  openModal('camera-modal');
+  const video = document.getElementById('camera-video');
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } })
+    .then(stream => { cameraStream = stream; video.srcObject = stream; })
+    .catch(() => { toast('Could not access camera — check permissions'); closeModal('camera-modal'); });
+}
+
+function closeCameraModal() {
+  if (cameraStream) { cameraStream.getTracks().forEach(t => t.stop()); cameraStream = null; }
+  closeModal('camera-modal');
+}
+
+function capturePhoto() {
+  const video  = document.getElementById('camera-video');
+  const canvas = document.createElement('canvas');
+  canvas.width  = video.videoWidth  || 640;
+  canvas.height = video.videoHeight || 480;
+  canvas.getContext('2d').drawImage(video, 0, 0);
+  const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+  pendingImageUrl = dataUrl;
+  showImagePreview(dataUrl, 'Photo captured');
+  closeCameraModal();
+}
+
+// ═══════════════════════════════════════════
+//  36 — SHARED HOUSEHOLD / JOIN CODE
+// ═══════════════════════════════════════════
+function generateJoinCode() {
+  // 6-character alphanumeric code stored in localStorage
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  return code;
+}
+
+function getOrCreateJoinCode() {
+  let code = localStorage.getItem('stockroom_join_code');
+  if (!code) { code = generateJoinCode(); localStorage.setItem('stockroom_join_code', code); }
+  return code;
 }
 
 function renderHealthDashboard() {
@@ -3057,7 +3948,9 @@ function cardHTML(item, threshold) {
       <div class="card-category">${item.category||'Other'}</div>
       <div class="card-btns">
         <button class="btn-icon" title="Update stock count" onclick="openStockCountModal('${item.id}')">🔢</button>
+        <button class="btn-icon" title="Usage analytics" onclick="openAnalyticsModal('${item.id}')">📊</button>
         <button class="btn-icon" title="Price history" onclick="openPriceHistoryModal('${item.id}')" ${getPriceHistory(item).length < 2 ? 'style="opacity:0.35;cursor:default"' : ''}>💰</button>
+        <button class="btn-icon" title="Share item" onclick="shareItem('${item.id}')">↗️</button>
         <button class="btn-icon" title="Edit" onclick="openEditModal('${item.id}')">✏️</button>
         <button class="btn-icon" title="Delete" onclick="deleteItem('${item.id}')">🗑️</button>
       </div>
@@ -3074,14 +3967,18 @@ function cardHTML(item, threshold) {
     </div>
     <div class="card-meta">
       <div class="meta-item"><strong>${daysLeft !== null ? daysLeft+'d left' : 'No data'}</strong>Est. remaining</div>
-      <div class="meta-item"><strong>${fmtDate(lastLog?.date)}</strong>Last bought</div>
+      <div class="meta-item" title="${fmtDate(lastLog?.date)}"><strong>${timeAgo(lastLog?.date)}</strong>Last bought</div>
       <div class="meta-item"><strong>${item.startedUsing ? fmtDate(item.startedUsing) : '—'}</strong>Started using</div>
       <div class="meta-item"><strong>${item.months||1}mo</strong>Per purchase</div>
     </div>
     ${item.stockCount != null ? `<div style="font-size:11px;color:var(--accent2);font-family:var(--mono);margin-bottom:8px">🔢 Stock count: ${item.stockCount} units remaining · counted ${fmtDate(item.stockCountDate)}</div>` : ''}
     ${priceTrendHTML(item)}
     ${frequencyInsightHTML(item)}
-    <div style="margin-bottom:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">${cadenceBadge}${statusBadge}</div>
+    <div style="margin-bottom:8px;display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      ${cadenceBadge}${statusBadge}
+      ${item.ordered ? `<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;background:rgba(91,141,238,0.15);border:1px solid rgba(91,141,238,0.3);color:#5b8dee;font-family:var(--mono)">📦 Ordered</span>` : ''}
+      ${(() => { const ex = getExpiryStatus(item); return ex ? `<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;background:rgba(232,168,56,0.1);border:1px solid rgba(232,168,56,0.3);color:${ex.color};font-family:var(--mono)" title="${fmtDate(item.expiry)}">⏰ ${ex.label}</span>` : ''; })()}
+    </div>
     <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
       <div class="card-star-rating" title="Click to rate">
         ${[1,2,3,4,5].map(n => `<span class="card-star${(item.rating||0)>=n?' on':''}" onclick="rateItem('${item.id}',${n})" data-id="${item.id}" data-val="${n}"
@@ -4543,11 +5440,16 @@ function renderShoppingList() {
         ? `<a class="shopping-link warn" href="${getStores(settings.country)[0].url(q(item.name+' alternative'))}" target="_blank" rel="noopener">⚠️ Find alternative</a>`
         : '';
 
+      const orderedBadge = item.ordered
+        ? `<span style="font-size:11px;font-weight:700;padding:2px 8px;border-radius:99px;background:rgba(91,141,238,0.15);border:1px solid rgba(91,141,238,0.3);color:#5b8dee;font-family:var(--mono)">📦 Ordered</span>`
+        : '';
+
       return `<div class="shopping-item ${urgency}" id="si-${item.id}">
         <div style="flex:1;min-width:0">
           <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
             <span class="shopping-item-name">${esc(item.name)}</span>
             ${rating}
+            ${orderedBadge}
           </div>
           <div class="shopping-item-meta">
             <span class="shopping-meta-pill" style="color:${urgencyColor}">⏱ Runs out: <strong style="color:${urgencyColor}">${runOutDate}</strong></span>
@@ -4557,6 +5459,10 @@ function renderShoppingList() {
           </div>
           <div class="shopping-links">
             ${buyLink}${altLinks}${poorRating}
+            ${!item.ordered
+              ? `<button class="btn btn-ghost btn-sm" style="font-size:12px;color:#5b8dee;border-color:#5b8dee" onclick="markOrdered('${item.id}')">📦 Mark ordered</button>`
+              : `<button class="btn btn-ghost btn-sm" style="font-size:12px;color:var(--muted)" onclick="unmarkOrdered('${item.id}')">↩ Unmark</button>`
+            }
             <button class="btn btn-ghost btn-sm" style="font-size:12px;color:var(--ok);border-color:var(--ok)" onclick="quickLogFromShopping('${item.id}')">✓ Bought</button>
           </div>
         </div>
@@ -4690,6 +5596,10 @@ function openEditModal(id) {
   storeField.dataset.manual = item.store ? '1' : '';
   storeField.dataset.autoFilled = '';
   document.getElementById('f-notes').value = item.notes||'';
+  const expiryEl    = document.getElementById('f-expiry');
+  const thresholdEl = document.getElementById('f-threshold');
+  if (expiryEl)    expiryEl.value    = item.expiry || '';
+  if (thresholdEl) thresholdEl.value = item.thresholdOverride != null ? item.thresholdOverride : '';
   currentRating = item.rating || 0;
   renderStars();
   const last = item.logs?.at(-1);
@@ -4740,8 +5650,11 @@ function saveItem() {
       item.notes        = document.getElementById('f-notes').value.trim();
       item.startedUsing = startedUsing;
       item.rating       = currentRating || null;
-      item.imageUrl    = pendingImageUrl || item.imageUrl || null;
-      item.storePrices = tempStorePrices.filter(sp => sp.store || sp.price);
+      item.imageUrl     = pendingImageUrl || item.imageUrl || null;
+      item.storePrices  = tempStorePrices.filter(sp => sp.store || sp.price);
+      item.expiry       = document.getElementById('f-expiry')?.value || null;
+      const tOverride   = parseInt(document.getElementById('f-threshold')?.value);
+      item.thresholdOverride = isNaN(tOverride) ? null : tOverride;
 
       // Update the most recent log entry's date and qty
       const lastDate  = document.getElementById('f-last-date').value;
@@ -4764,21 +5677,23 @@ function saveItem() {
     const lastQty   = parseFloat(document.getElementById('f-last-qty').value)||1;
     const lastPrice = document.getElementById('f-last-price').value.trim();
     items.push({
-      id:           uid(),
+      id:                uid(),
       name,
-      category:     document.getElementById('f-category').value,
-      cadence:      document.getElementById('f-cadence').value,
-      qty:          parseFloat(document.getElementById('f-qty').value)||1,
-      months:       parseFloat(document.getElementById('f-months').value)||1,
-      url:          document.getElementById('f-url').value.trim(),
-      store:        storeVal,
-      notes:        document.getElementById('f-notes').value.trim(),
+      category:          document.getElementById('f-category').value,
+      cadence:           document.getElementById('f-cadence').value,
+      qty:               parseFloat(document.getElementById('f-qty').value)||1,
+      months:            parseFloat(document.getElementById('f-months').value)||1,
+      url:               document.getElementById('f-url').value.trim(),
+      store:             storeVal,
+      notes:             document.getElementById('f-notes').value.trim(),
       startedUsing,
-      rating:       currentRating || null,
-      imageUrl:     pendingImageUrl || null,
-      storePrices:  tempStorePrices.filter(sp => sp.store || sp.price),
-      logs:         lastDate ? [{ id:uid(), date:lastDate, qty:lastQty, price:lastPrice, store:storeVal }] : [],
-      updatedAt:    new Date().toISOString(),
+      rating:            currentRating || null,
+      imageUrl:          pendingImageUrl || null,
+      storePrices:       tempStorePrices.filter(sp => sp.store || sp.price),
+      expiry:            document.getElementById('f-expiry')?.value || null,
+      thresholdOverride: (() => { const v = parseInt(document.getElementById('f-threshold')?.value); return isNaN(v) ? null : v; })(),
+      logs:              lastDate ? [{ id:uid(), date:lastDate, qty:lastQty, price:lastPrice, store:storeVal }] : [],
+      updatedAt:         new Date().toISOString(),
     });
   }
   saveData();
@@ -4786,7 +5701,7 @@ function saveItem() {
   if (editingId) clearQuickAddedFlag(editingId);
   renderAll();
   toast('Item saved ✓');
-  if (driveConnected) setTimeout(syncAll, 400);
+  setTimeout(syncAll, 400);
 }
 
 function saveLog() {
@@ -4804,6 +5719,9 @@ function saveLog() {
   // Update startedUsing if a new date was provided
   const su = document.getElementById('log-started-using').value;
   if (su) item.startedUsing = su;
+  // Clear ordered flag — they've received and logged it
+  item.ordered   = false;
+  item.orderedAt = null;
   touchItem(item);
   saveData();
   closeModal('log-modal');
@@ -5508,6 +6426,16 @@ function init() {
   }
 
   updateSyncUI();
+  loadCompactView();
+  // Init profiles — migrate existing data into default profile if needed
+  const profilesRaw = localStorage.getItem('stockroom_profiles');
+  if (!profilesRaw) {
+    loadData();
+    const profiles = { default: { name: 'Home', items: JSON.parse(JSON.stringify(items)), settings: JSON.parse(JSON.stringify(settings)) } };
+    saveProfiles(profiles);
+  }
+  activeProfile = localStorage.getItem('stockroom_active_profile') || 'default';
+  loadProfile(activeProfile);
   renderAll();
   loadNotifSettings();
   // Sync immediately on load
