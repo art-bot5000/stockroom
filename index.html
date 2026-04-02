@@ -428,6 +428,62 @@
 </head>
 <body>
 
+<!-- ═══ DRIVE PERMISSION EXPLANATION MODAL ═══ -->
+<div class="modal-backdrop" id="drive-permission-modal">
+  <div class="modal" style="max-width:440px">
+    <div style="text-align:center;margin-bottom:20px">
+      <div style="font-size:48px;margin-bottom:8px">☁️</div>
+      <h2 style="font-size:20px;margin-bottom:6px">Connect Google Drive</h2>
+      <p style="font-size:13px;color:var(--muted);line-height:1.6">STOCKROOM uses Google Drive to keep your data safe and in sync across devices. Here's exactly what access is needed and why.</p>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:10px;margin-bottom:20px">
+
+      <div style="display:flex;gap:14px;align-items:flex-start;padding:14px;background:var(--surface2);border-radius:10px;border:1px solid var(--border)">
+        <div style="font-size:24px;flex-shrink:0">📄</div>
+        <div>
+          <div style="font-size:13px;font-weight:700;margin-bottom:3px">Create and edit one file</div>
+          <div style="font-size:12px;color:var(--muted);line-height:1.5">STOCKROOM creates a single file called <code style="font-family:var(--mono);font-size:11px;background:var(--bg);padding:1px 5px;border-radius:3px">stockroom_data.json</code> in your Drive. It can only see files it created — not your other Drive contents.</div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:14px;align-items:flex-start;padding:14px;background:var(--surface2);border-radius:10px;border:1px solid var(--border)">
+        <div style="font-size:24px;flex-shrink:0">🔒</div>
+        <div>
+          <div style="font-size:13px;font-weight:700;margin-bottom:3px">No access to your other files</div>
+          <div style="font-size:12px;color:var(--muted);line-height:1.5">The permission requested is <code style="font-family:var(--mono);font-size:11px;background:var(--bg);padding:1px 5px;border-radius:3px">drive.file</code> — the most restricted Drive scope. Google only allows access to files this app created itself.</div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:14px;align-items:flex-start;padding:14px;background:var(--surface2);border-radius:10px;border:1px solid var(--border)">
+        <div style="font-size:24px;flex-shrink:0">📧</div>
+        <div>
+          <div style="font-size:13px;font-weight:700;margin-bottom:3px">Why it says "pete-92f.workers.dev"</div>
+          <div style="font-size:12px;color:var(--muted);line-height:1.5">Google shows the server that handles the secure sign-in step. This is the STOCKROOM email reminder service — it exchanges your sign-in for a token and immediately sends you back to the app. It does not store your Google password or personal details.</div>
+        </div>
+      </div>
+
+      <div style="display:flex;gap:14px;align-items:flex-start;padding:14px;background:rgba(76,187,138,0.06);border-radius:10px;border:1px solid rgba(76,187,138,0.2)">
+        <div style="font-size:24px;flex-shrink:0">🗑️</div>
+        <div>
+          <div style="font-size:13px;font-weight:700;color:var(--ok);margin-bottom:3px">You can revoke access any time</div>
+          <div style="font-size:12px;color:var(--muted);line-height:1.5">Go to <a href="https://myaccount.google.com/permissions" target="_blank" rel="noopener" style="color:var(--accent2)">myaccount.google.com/permissions</a> to remove STOCKROOM's access at any time. Your Drive file stays — only the permission is revoked.</div>
+        </div>
+      </div>
+
+    </div>
+
+    <div style="background:rgba(232,168,56,0.06);border:1px solid rgba(232,168,56,0.2);border-radius:8px;padding:10px 14px;margin-bottom:20px;font-size:12px;color:var(--muted);line-height:1.5">
+      <strong style="color:var(--accent)">Your data stays yours.</strong> STOCKROOM is open source, stores your items in your own Drive account, and does not sell or share your data.
+    </div>
+
+    <div class="modal-footer" style="flex-direction:column;gap:8px">
+      <button class="btn btn-blue btn-xl full" onclick="proceedConnectDrive()">Continue to Google Sign-in →</button>
+      <button class="btn btn-ghost btn-sm" style="text-align:center" onclick="closeModal('drive-permission-modal')">Cancel</button>
+    </div>
+  </div>
+</div>
+
 <!-- ═══ WIZARD ═══ -->
 <div id="wizard">
   <div class="wizard-box">
@@ -448,7 +504,7 @@
         <div class="wizard-feature"><div class="feat-icon">☁️</div><h4>Cloud Sync</h4><p>Your data syncs to Drive or Dropbox — access anywhere</p></div>
       </div>
       <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Sync your data so it's safe and available on all your devices:</p>
-      <button class="btn btn-blue btn-xl full" style="margin-bottom:10px" onclick="wizardConnectDrive()">☁️ Connect Google Drive</button>
+      <button class="btn btn-blue btn-xl full" style="margin-bottom:10px" onclick="openDrivePermissionModal('wizard')">☁️ Connect Google Drive</button>
       <button class="btn btn-ghost btn-xl full" style="margin-bottom:10px;border-color:var(--border)" onclick="wizardConnectDropbox()">📦 Connect Dropbox</button>
       <button class="btn btn-ghost btn-xl full" style="font-size:13px;opacity:0.7" onclick="wizardNext()">Continue without sync →</button>
     </div>
@@ -681,7 +737,7 @@
         <div class="setting-info"><h4>Google Drive</h4><p>Sync to your Google Drive account</p></div>
         <div style="display:flex;align-items:center;gap:8px">
           <span id="drive-status" style="display:none;align-items:center;gap:6px;font-size:12px;color:var(--ok);font-family:var(--mono)">✓ Connected</span>
-          <button id="drive-connect-btn" class="btn btn-blue btn-sm" onclick="connectDrive()">Connect Drive</button>
+          <button id="drive-connect-btn" class="btn btn-blue btn-sm" onclick="openDrivePermissionModal('settings')">Connect Drive</button>
           <button id="drive-sync-btn" class="btn btn-ghost btn-sm" style="display:none" onclick="syncNow()">Sync Now</button>
           <button id="drive-signout-btn" class="btn btn-danger btn-sm" style="display:none" onclick="signOutDrive()">Sign Out</button>
         </div>
@@ -1572,6 +1628,25 @@ function enableItemEdit() {
   document.getElementById('item-modal-subtitle').textContent = 'Editing: ' + (items.find(i => i.id === editingId)?.name || '');
   document.getElementById('item-readonly-view').style.display = 'none';
   document.getElementById('item-edit-view').style.display = 'block';
+}
+
+// ═══════════════════════════════════════════
+//  DRIVE PERMISSION EXPLANATION
+// ═══════════════════════════════════════════
+let _driveConnectContext = 'settings'; // 'wizard' or 'settings'
+
+function openDrivePermissionModal(context) {
+  _driveConnectContext = context || 'settings';
+  openModal('drive-permission-modal');
+}
+
+function proceedConnectDrive() {
+  closeModal('drive-permission-modal');
+  if (_driveConnectContext === 'wizard') {
+    wizardConnectDrive();
+  } else {
+    connectDrive();
+  }
 }
 
 function wizardConnectDrive() {
@@ -6011,7 +6086,6 @@ async function sendEmailNow() {
 
 function handleOAuthRedirect() {
   const qParams = new URLSearchParams(location.search);
-  const hParams = new URLSearchParams(window.location.hash.slice(1));
 
   // ── Google Drive code flow (returns via query string from Worker) ──
   const driveAuth = qParams.get('drive_auth');
@@ -6043,37 +6117,46 @@ function handleOAuthRedirect() {
         })
         .catch(e => { console.error('Token fetch failed:', e); toast('Drive connection failed — try again'); });
     } else {
-      toast(`Drive connection failed: ${qParams.get('reason') || 'unknown'}`);
+      const reason = qParams.get('reason') || 'unknown';
+      alert(`Drive connection failed: ${reason}\n\nCheck the browser console and Cloudflare Worker logs for more detail.`);
+      toast(`Drive connection failed: ${reason}`);
     }
     return;
   }
 
-  // ── Dropbox implicit flow (returns via hash) ──
-  const token = hParams.get('access_token');
-  if (!token) return;
-  history.replaceState(null, '', location.pathname);
-
-  const provider = sessionStorage.getItem('stockroom_auth_provider') || 'drive';
-  sessionStorage.removeItem('stockroom_auth_provider');
-
-  if (provider === 'dropbox') {
-    dropboxToken     = token;
-    dropboxConnected = true;
-    try { sessionStorage.setItem('stockroom_dropbox_token', token); } catch(e){}
-    try { localStorage.setItem('stockroom_dropbox', JSON.stringify({ dropboxConnected })); } catch(e){}
-    updateSyncUI();
-    const wizardStep = localStorage.getItem('stockroom_wizard_step');
-    if (wizardStep === '2') { localStorage.removeItem('stockroom_wizard_step'); wizardNext(); }
-    syncDropbox().then(() => {
-      try {
-        const preAuthView = sessionStorage.getItem('stockroom_pre_auth_view');
-        sessionStorage.removeItem('stockroom_pre_auth_view');
-        if (preAuthView === 'settings') {
-          const tab = [...document.querySelectorAll('.tab')].find(t => t.textContent.includes('Settings'));
-          if (tab) showView('settings', tab);
-        }
-      } catch(e){}
-    });
+  // ── Dropbox PKCE code flow (returns via query string from Worker) ──
+  const dropboxAuth = qParams.get('dropbox_auth');
+  if (dropboxAuth) {
+    history.replaceState(null, '', location.pathname);
+    if (dropboxAuth === 'success') {
+      fetch(`${WORKER_URL}/auth/dropbox-token`)
+        .then(r => r.json())
+        .then(data => {
+          if (data.access_token) {
+            dropboxToken     = data.access_token;
+            dropboxConnected = true;
+            try { sessionStorage.setItem('stockroom_dropbox_token', data.access_token); } catch(e){}
+            try { localStorage.setItem('stockroom_dropbox', JSON.stringify({ dropboxConnected })); } catch(e){}
+            updateSyncUI();
+            const wizardStep = localStorage.getItem('stockroom_wizard_step');
+            if (wizardStep === '2') { localStorage.removeItem('stockroom_wizard_step'); wizardNext(); }
+            syncDropbox().then(() => {
+              try {
+                const preAuthView = sessionStorage.getItem('stockroom_pre_auth_view');
+                sessionStorage.removeItem('stockroom_pre_auth_view');
+                if (preAuthView === 'settings') {
+                  const tab = [...document.querySelectorAll('.tab')].find(t => t.textContent.includes('Settings'));
+                  if (tab) showView('settings', tab);
+                }
+              } catch(e){}
+            });
+          }
+        })
+        .catch(e => { console.error('Dropbox token fetch failed:', e); toast('Dropbox connection failed — try again'); });
+    } else {
+      toast(`Dropbox connection failed: ${qParams.get('reason') || 'unknown'}`);
+    }
+    return;
   }
 }
 
@@ -6192,12 +6275,38 @@ async function uploadToDrive(payload) {
 function connectDropbox() {
   try { sessionStorage.setItem('stockroom_pre_auth_view', 'settings'); } catch(e){}
   try { sessionStorage.setItem('stockroom_auth_provider', 'dropbox'); } catch(e){}
-  const authUrl = `https://www.dropbox.com/oauth2/authorize`
-    + `?client_id=${DROPBOX_APP_KEY}`
-    + `&redirect_uri=${encodeURIComponent(location.origin + location.pathname)}`
-    + `&response_type=token`
-    + `&token_access_type=offline`;
-  location.href = authUrl;
+
+  // Generate PKCE code verifier and challenge
+  const verifier = generateCodeVerifier();
+  sessionStorage.setItem('dropbox_pkce_verifier', verifier);
+
+  generateCodeChallenge(verifier).then(challenge => {
+    const redirectUri = `${WORKER_URL}/auth/dropbox`;
+    const authUrl = `https://www.dropbox.com/oauth2/authorize`
+      + `?client_id=${DROPBOX_APP_KEY}`
+      + `&redirect_uri=${encodeURIComponent(redirectUri)}`
+      + `&response_type=code`
+      + `&token_access_type=offline`
+      + `&code_challenge=${encodeURIComponent(challenge)}`
+      + `&code_challenge_method=S256`
+      + `&state=${encodeURIComponent(verifier)}`;
+    location.href = authUrl;
+  });
+}
+
+function generateCodeVerifier() {
+  const array = new Uint8Array(64);
+  crypto.getRandomValues(array);
+  return btoa(String.fromCharCode(...array))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '').slice(0, 128);
+}
+
+async function generateCodeChallenge(verifier) {
+  const encoder = new TextEncoder();
+  const data     = encoder.encode(verifier);
+  const digest   = await crypto.subtle.digest('SHA-256', data);
+  return btoa(String.fromCharCode(...new Uint8Array(digest)))
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 }
 
 async function syncDropbox() {
