@@ -428,6 +428,74 @@
 </head>
 <body>
 
+<!-- ═══ ADD REMINDER MODAL ═══ -->
+<div class="modal-backdrop" id="reminder-modal">
+  <div class="modal" style="max-width:440px">
+    <h2 id="reminder-modal-title">🔔 Add Reminder</h2>
+    <p class="subtitle">Set a scheduled replacement reminder for any item.</p>
+    <div class="form-grid">
+      <div class="field form-full">
+        <label>Item name *</label>
+        <input type="text" id="r-name" placeholder="e.g. Toothbrush Head, Water Filter...">
+      </div>
+      <div class="field form-full">
+        <label>Link to existing item <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
+        <select id="r-item-link" style="background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-family:var(--sans);font-size:13px;width:100%">
+          <option value="">— standalone reminder —</option>
+        </select>
+      </div>
+      <div class="field form-full">
+        <label>Replace every</label>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="number" id="r-interval" min="1" max="52" value="3"
+            style="width:72px;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-family:var(--mono);font-size:14px">
+          <select id="r-unit" style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-family:var(--sans);font-size:13px">
+            <option value="days">days</option>
+            <option value="weeks">weeks</option>
+            <option value="months" selected>months</option>
+          </select>
+        </div>
+      </div>
+      <div class="field form-full">
+        <label>Last replaced <span style="font-weight:400;color:var(--muted)">(leave blank if unknown)</span></label>
+        <input type="date" id="r-last-replaced">
+      </div>
+      <div class="field form-full">
+        <label>Notes <span style="font-weight:400;color:var(--muted)">(optional)</span></label>
+        <input type="text" id="r-notes" placeholder="e.g. Check the brand, use Oral-B compatible">
+      </div>
+    </div>
+
+    <!-- Reminder suggestions -->
+    <div style="margin-top:16px">
+      <div style="font-size:11px;color:var(--muted);font-family:var(--mono);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:8px">Common replacements</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px" id="reminder-suggestions"></div>
+    </div>
+
+    <div class="modal-footer" style="margin-top:20px">
+      <button class="btn btn-ghost" onclick="closeModal('reminder-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveReminder()">Save Reminder</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ LOG REPLACEMENT MODAL ═══ -->
+<div class="modal-backdrop" id="log-replacement-modal">
+  <div class="modal" style="max-width:380px;text-align:center">
+    <div style="font-size:40px;margin-bottom:8px">✅</div>
+    <h2 id="log-replacement-title" style="font-size:18px;margin-bottom:6px"></h2>
+    <p class="subtitle" id="log-replacement-subtitle" style="margin-bottom:20px"></p>
+    <div class="field" style="text-align:left;margin-bottom:20px">
+      <label>Date replaced</label>
+      <input type="date" id="log-replacement-date" style="width:100%;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-family:var(--sans);font-size:13px">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('log-replacement-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="confirmLogReplacement()">✅ Mark as replaced</button>
+    </div>
+  </div>
+</div>
+
 <!-- ═══ DRIVE PERMISSION EXPLANATION MODAL ═══ -->
 <div class="modal-backdrop" id="drive-permission-modal">
   <div class="modal" style="max-width:440px">
@@ -589,6 +657,7 @@
     <button class="tab active" onclick="showView('stock',this)">📦 Stock</button>
     <button class="tab" onclick="showView('report',this)">📋 Report</button>
     <button class="tab" onclick="showView('shopping',this)">🛍️ Shopping List</button>
+    <button class="tab" onclick="showView('reminders',this)">🔔 Reminders</button>
     <button class="tab" onclick="showView('savings',this)">💰 Savings</button>
     <button class="tab" onclick="showView('settings',this)">⚙️ Settings</button>
   </div>
@@ -666,6 +735,55 @@
     </div>
     <div id="sns-banner" style="display:none"></div>
     <div id="items-grid"></div>
+  </div>
+
+  <!-- REMINDERS VIEW -->
+  <div class="view" id="view-reminders">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;flex-wrap:wrap;gap:10px">
+      <div>
+        <h2 style="font-size:18px;font-weight:700">🔔 Reminders</h2>
+        <p style="font-size:12px;color:var(--muted);margin-top:3px">Scheduled replacements — independent of stock levels</p>
+      </div>
+      <button class="btn btn-primary btn-sm" onclick="openAddReminderModal()">+ Add Reminder</button>
+    </div>
+
+    <!-- Overdue / due soon nudge bar -->
+    <div id="reminders-nudge" style="display:none;background:rgba(232,80,80,0.1);border:1px solid rgba(232,80,80,0.25);border-radius:10px;padding:10px 14px;margin-bottom:16px;font-size:13px;display:none;align-items:center;justify-content:space-between;gap:8px">
+      <span id="reminders-nudge-text"></span>
+      <button class="btn btn-sm" style="background:rgba(232,80,80,0.15);border:1px solid rgba(232,80,80,0.3);color:var(--danger);font-size:12px" onclick="document.getElementById('reminders-overdue').scrollIntoView({behavior:'smooth'})">View →</button>
+    </div>
+
+    <!-- Overdue section -->
+    <div id="reminders-overdue-section" style="display:none;margin-bottom:24px">
+      <div style="font-size:11px;font-weight:700;color:var(--danger);font-family:var(--mono);letter-spacing:0.5px;text-transform:uppercase;margin-bottom:10px;display:flex;align-items:center;gap:8px">
+        <span id="reminders-overdue" style="scroll-margin-top:80px">🔴 Overdue</span>
+        <span id="overdue-count" style="background:rgba(232,80,80,0.15);border:1px solid rgba(232,80,80,0.3);color:var(--danger);font-size:10px;padding:1px 7px;border-radius:99px"></span>
+      </div>
+      <div id="reminders-overdue-list"></div>
+    </div>
+
+    <!-- Due soon section -->
+    <div id="reminders-soon-section" style="display:none;margin-bottom:24px">
+      <div style="font-size:11px;font-weight:700;color:var(--warn);font-family:var(--mono);letter-spacing:0.5px;text-transform:uppercase;margin-bottom:10px;display:flex;align-items:center;gap:8px">
+        🟡 Due within 30 days
+        <span id="soon-count" style="background:rgba(232,168,56,0.15);border:1px solid rgba(232,168,56,0.3);color:var(--warn);font-size:10px;padding:1px 7px;border-radius:99px"></span>
+      </div>
+      <div id="reminders-soon-list"></div>
+    </div>
+
+    <!-- Upcoming section -->
+    <div id="reminders-upcoming-section" style="display:none;margin-bottom:24px">
+      <div style="font-size:11px;font-weight:700;color:var(--muted);font-family:var(--mono);letter-spacing:0.5px;text-transform:uppercase;margin-bottom:10px">⚪ Upcoming</div>
+      <div id="reminders-upcoming-list"></div>
+    </div>
+
+    <!-- Empty state -->
+    <div id="reminders-empty" style="text-align:center;padding:60px 20px;color:var(--muted)">
+      <div style="font-size:48px;margin-bottom:12px">🔔</div>
+      <div style="font-size:16px;font-weight:600;margin-bottom:8px;color:var(--text)">No reminders yet</div>
+      <p style="font-size:13px;line-height:1.6;margin-bottom:20px">Add replacement reminders for items that need regular changing — toothbrush heads, water filters, smoke alarm batteries, and more.</p>
+      <button class="btn btn-primary" onclick="openAddReminderModal()">+ Add your first reminder</button>
+    </div>
   </div>
 
   <!-- SAVINGS VIEW -->
@@ -936,11 +1054,24 @@
 </div>
 
 <!-- ═══ TEMPLATES MODAL ═══ -->
-<div class="modal-backdrop" id="templates-modal">
-  <div class="modal" style="max-width:480px">
+<div class="modal-backdrop" id="templates-modal" style="z-index:300">
+  <div class="modal" style="max-width:520px">
     <h2>📋 Starter Templates</h2>
     <p class="subtitle">Tap any item to pre-fill the form. You can edit before saving.</p>
-    <div id="templates-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;max-height:420px;overflow-y:auto"></div>
+
+    <!-- Category filter -->
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px" id="template-cat-filter">
+      <button class="btn btn-ghost btn-sm active-cat" onclick="filterTemplates('all',this)" style="font-size:11px">All</button>
+      <button class="btn btn-ghost btn-sm" onclick="filterTemplates('Kitchen',this)" style="font-size:11px">🍳 Kitchen</button>
+      <button class="btn btn-ghost btn-sm" onclick="filterTemplates('Bathroom',this)" style="font-size:11px">🛁 Bathroom</button>
+      <button class="btn btn-ghost btn-sm" onclick="filterTemplates('Cleaning',this)" style="font-size:11px">🧹 Cleaning</button>
+      <button class="btn btn-ghost btn-sm" onclick="filterTemplates('Food & Drink',this)" style="font-size:11px">🥫 Food</button>
+      <button class="btn btn-ghost btn-sm" onclick="filterTemplates('Health',this)" style="font-size:11px">💊 Health</button>
+      <button class="btn btn-ghost btn-sm" onclick="filterTemplates('Garden',this)" style="font-size:11px">🌱 Garden</button>
+      <button class="btn btn-ghost btn-sm" onclick="filterTemplates('Other',this)" style="font-size:11px">📦 Other</button>
+    </div>
+
+    <div id="templates-grid" style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px;max-height:400px;overflow-y:auto"></div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('templates-modal')">Cancel</button>
     </div>
@@ -1092,6 +1223,19 @@
         <div class="field form-full"><label>Notes</label><input type="text" id="f-notes" placeholder="Any notes about this item..."></div>
         <div class="field"><label>Expiry date <span style="font-weight:400;color:var(--muted)">(optional)</span></label><input type="date" id="f-expiry"></div>
         <div class="field"><label>Warn threshold override <span style="font-weight:400;color:var(--muted)">(% — leave blank to use global)</span></label><input type="number" id="f-threshold" min="5" max="80" step="5" placeholder="e.g. 30"></div>
+        <div class="field form-full" style="padding-top:4px">
+          <label>🔔 Replacement reminder <span style="font-weight:400;color:var(--muted)">(e.g. toothbrush head every 3 months)</span></label>
+          <div style="display:flex;gap:8px;align-items:center;margin-top:4px">
+            <span style="font-size:13px;color:var(--muted)">Replace every</span>
+            <input type="number" id="f-replace-interval" min="1" max="52" step="1" placeholder="—"
+              style="width:64px;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:5px 8px;color:var(--text);font-size:13px;font-family:var(--mono)">
+            <select id="f-replace-unit" style="background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:5px 10px;color:var(--text);font-size:13px;font-family:var(--sans)">
+              <option value="days">days</option>
+              <option value="weeks">weeks</option>
+              <option value="months" selected>months</option>
+            </select>
+          </div>
+        </div>
         <div class="field form-full">
           <label>Product Rating</label>
           <div style="display:flex;align-items:center;gap:14px;margin-top:4px">
@@ -1417,7 +1561,7 @@ function getStores(code) { return STORES_BY_COUNTRY[code] || STORES_BY_COUNTRY.O
 const CLIENT_ID       = '589308993147-rfj3kbaave6uhf3k1ojes3ph2l1pkd1m.apps.googleusercontent.com';
 const SCOPES          = 'https://www.googleapis.com/auth/drive.file';
 const FILE_NAME       = 'stockroom_data.json';
-const WORKER_URL      = 'https://stockroom-email.pete-92f.workers.dev';
+const WORKER_URL      = 'https://stockroom.art-bot5000.deno.net';
 const DROPBOX_APP_KEY = 'v42gsxqwb7fommt';
 const DROPBOX_FILE    = '/stockroom_data.json';  // stored in app folder
 
@@ -2040,53 +2184,149 @@ async function sendReminderEmail(manual = true) {
 //  ITEM TEMPLATES
 // ═══════════════════════════════════════════
 const ITEM_TEMPLATES = [
-  { name:'Coffee Beans', category:'Kitchen', cadence:'monthly', qty:1, months:1, emoji:'☕' },
-  { name:'Washing Powder', category:'Cleaning', cadence:'monthly', qty:1, months:2, emoji:'🧺' },
-  { name:'Toilet Roll (9-pack)', category:'Bathroom', cadence:'bulk', qty:9, months:1, emoji:'🧻' },
-  { name:'Shampoo', category:'Bathroom', cadence:'monthly', qty:1, months:2, emoji:'🧴' },
-  { name:'Toothpaste', category:'Bathroom', cadence:'monthly', qty:1, months:2, emoji:'🦷' },
-  { name:'Washing Up Liquid', category:'Cleaning', cadence:'monthly', qty:1, months:1, emoji:'🍽️' },
-  { name:'Bin Bags', category:'Cleaning', cadence:'bulk', qty:1, months:2, emoji:'🗑️' },
-  { name:'Kitchen Roll', category:'Kitchen', cadence:'monthly', qty:1, months:1, emoji:'🧻' },
-  { name:'Dishwasher Tablets', category:'Cleaning', cadence:'bulk', qty:60, months:2, emoji:'✨' },
-  { name:'Hand Soap', category:'Bathroom', cadence:'monthly', qty:1, months:1, emoji:'🧼' },
-  { name:'Olive Oil', category:'Food & Drink', cadence:'monthly', qty:1, months:2, emoji:'🫒' },
-  { name:'Milk', category:'Food & Drink', cadence:'monthly', qty:4, months:0.5, emoji:'🥛' },
-  { name:'Paracetamol', category:'Health', cadence:'bulk', qty:1, months:6, emoji:'💊' },
-  { name:'Vitamins', category:'Health', cadence:'monthly', qty:1, months:1, emoji:'💊' },
-  { name:'Dog Food', category:'Other', cadence:'bulk', qty:1, months:1, emoji:'🐕' },
-  { name:'Cat Food', category:'Other', cadence:'bulk', qty:1, months:1, emoji:'🐈' },
-  { name:'Fabric Softener', category:'Cleaning', cadence:'monthly', qty:1, months:2, emoji:'🌸' },
-  { name:'Shower Gel', category:'Bathroom', cadence:'monthly', qty:1, months:1, emoji:'🚿' },
-  { name:'Deodorant', category:'Bathroom', cadence:'monthly', qty:1, months:1, emoji:'💨' },
-  { name:'Pasta', category:'Food & Drink', cadence:'bulk', qty:4, months:1, emoji:'🍝' },
+  // Kitchen
+  { name:'Coffee Beans',            category:'Kitchen',      cadence:'monthly', qty:1,  months:1,   emoji:'☕' },
+  { name:'Ground Coffee',           category:'Kitchen',      cadence:'monthly', qty:1,  months:0.5, emoji:'☕' },
+  { name:'Coffee Pods (48-pack)',   category:'Kitchen',      cadence:'monthly', qty:48, months:1,   emoji:'☕' },
+  { name:'Tea Bags (240-pack)',     category:'Kitchen',      cadence:'bulk',    qty:1,  months:3,   emoji:'🍵' },
+  { name:'Kitchen Roll',            category:'Kitchen',      cadence:'monthly', qty:1,  months:1,   emoji:'🧻' },
+  { name:'Olive Oil',               category:'Kitchen',      cadence:'monthly', qty:1,  months:2,   emoji:'🫒' },
+  { name:'Washing Up Liquid',       category:'Kitchen',      cadence:'monthly', qty:1,  months:1,   emoji:'🍽️' },
+  { name:'Foil / Cling Film',       category:'Kitchen',      cadence:'bulk',    qty:1,  months:3,   emoji:'📦' },
+  { name:'Dishwasher Salt',         category:'Kitchen',      cadence:'bulk',    qty:1,  months:2,   emoji:'🧂' },
+  { name:'Dishwasher Rinse Aid',    category:'Kitchen',      cadence:'bulk',    qty:1,  months:3,   emoji:'✨' },
+  { name:'Dishwasher Tablets',      category:'Kitchen',      cadence:'bulk',    qty:60, months:2,   emoji:'✨' },
+  { name:'Bin Bags',                category:'Kitchen',      cadence:'bulk',    qty:1,  months:2,   emoji:'🗑️' },
+  { name:'Zip Lock Bags',           category:'Kitchen',      cadence:'bulk',    qty:1,  months:4,   emoji:'📦' },
+  // Bathroom
+  { name:'Shampoo',                 category:'Bathroom',     cadence:'monthly', qty:1,  months:2,   emoji:'🧴' },
+  { name:'Conditioner',             category:'Bathroom',     cadence:'monthly', qty:1,  months:2,   emoji:'🧴' },
+  { name:'Shower Gel',              category:'Bathroom',     cadence:'monthly', qty:1,  months:1,   emoji:'🚿' },
+  { name:'Toothpaste',              category:'Bathroom',     cadence:'monthly', qty:1,  months:2,   emoji:'🦷' },
+  { name:'Toothbrush',              category:'Bathroom',     cadence:'bulk',    qty:1,  months:3,   emoji:'🪥', replacementInterval:3, replacementUnit:'months' },
+  { name:'Toothbrush Heads',        category:'Bathroom',     cadence:'bulk',    qty:4,  months:3,   emoji:'🪥', replacementInterval:3, replacementUnit:'months' },
+  { name:'Floss',                   category:'Bathroom',     cadence:'monthly', qty:1,  months:2,   emoji:'🦷' },
+  { name:'Mouthwash',               category:'Bathroom',     cadence:'monthly', qty:1,  months:2,   emoji:'🫧' },
+  { name:'Hand Soap',               category:'Bathroom',     cadence:'monthly', qty:1,  months:1,   emoji:'🧼' },
+  { name:'Deodorant',               category:'Bathroom',     cadence:'monthly', qty:1,  months:1,   emoji:'💨' },
+  { name:'Razor Blades (8-pack)',   category:'Bathroom',     cadence:'bulk',    qty:8,  months:2,   emoji:'🪒' },
+  { name:'Toilet Roll (9-pack)',    category:'Bathroom',     cadence:'bulk',    qty:9,  months:1,   emoji:'🧻' },
+  { name:'Cotton Buds',             category:'Bathroom',     cadence:'bulk',    qty:1,  months:3,   emoji:'🌿' },
+  { name:'Face Moisturiser',        category:'Bathroom',     cadence:'monthly', qty:1,  months:2,   emoji:'🧴' },
+  { name:'Sun Cream SPF50',         category:'Bathroom',     cadence:'bulk',    qty:1,  months:3,   emoji:'☀️' },
+  // Cleaning
+  { name:'Washing Powder',          category:'Cleaning',     cadence:'monthly', qty:1,  months:2,   emoji:'🧺' },
+  { name:'Washing Liquid',          category:'Cleaning',     cadence:'monthly', qty:1,  months:2,   emoji:'🧺' },
+  { name:'Fabric Softener',         category:'Cleaning',     cadence:'monthly', qty:1,  months:2,   emoji:'🌸' },
+  { name:'Laundry Capsules (40pk)', category:'Cleaning',     cadence:'bulk',    qty:40, months:2,   emoji:'🧺' },
+  { name:'Washing Machine Cleaner', category:'Cleaning',     cadence:'bulk',    qty:1,  months:3,   emoji:'🌀', replacementInterval:3, replacementUnit:'months' },
+  { name:'Surface Spray',           category:'Cleaning',     cadence:'monthly', qty:1,  months:1,   emoji:'🧹' },
+  { name:'Bleach',                  category:'Cleaning',     cadence:'monthly', qty:1,  months:2,   emoji:'🫧' },
+  { name:'Toilet Cleaner',          category:'Cleaning',     cadence:'monthly', qty:1,  months:2,   emoji:'🚽' },
+  { name:'Sponges (multi-pack)',    category:'Cleaning',     cadence:'monthly', qty:1,  months:1,   emoji:'🧽' },
+  { name:'Microfibre Cloths',       category:'Cleaning',     cadence:'bulk',    qty:1,  months:3,   emoji:'🧽' },
+  { name:'Mop Heads',               category:'Cleaning',     cadence:'bulk',    qty:1,  months:6,   emoji:'🧹', replacementInterval:6, replacementUnit:'months' },
+  { name:'Vacuum Bags',             category:'Cleaning',     cadence:'bulk',    qty:1,  months:3,   emoji:'🌀' },
+  { name:'Air Freshener',           category:'Cleaning',     cadence:'monthly', qty:1,  months:1,   emoji:'🌸' },
+  // Food & Drink
+  { name:'Milk (4-pint)',           category:'Food & Drink', cadence:'monthly', qty:4,  months:0.5, emoji:'🥛' },
+  { name:'Pasta (500g)',            category:'Food & Drink', cadence:'bulk',    qty:4,  months:1,   emoji:'🍝' },
+  { name:'Rice (1kg)',              category:'Food & Drink', cadence:'bulk',    qty:2,  months:2,   emoji:'🍚' },
+  { name:'Tinned Tomatoes',         category:'Food & Drink', cadence:'bulk',    qty:6,  months:2,   emoji:'🍅' },
+  { name:'Tinned Tuna',             category:'Food & Drink', cadence:'bulk',    qty:6,  months:2,   emoji:'🐟' },
+  { name:'Tinned Beans',            category:'Food & Drink', cadence:'bulk',    qty:6,  months:2,   emoji:'🫘' },
+  { name:'Cereal',                  category:'Food & Drink', cadence:'monthly', qty:1,  months:1,   emoji:'🥣' },
+  { name:'Bread',                   category:'Food & Drink', cadence:'monthly', qty:2,  months:0.5, emoji:'🍞' },
+  { name:'Cooking Oil',             category:'Food & Drink', cadence:'bulk',    qty:1,  months:2,   emoji:'🫙' },
+  { name:'Salt',                    category:'Food & Drink', cadence:'bulk',    qty:1,  months:6,   emoji:'🧂' },
+  { name:'Sugar',                   category:'Food & Drink', cadence:'bulk',    qty:1,  months:3,   emoji:'🍬' },
+  { name:'Dog Food',                category:'Food & Drink', cadence:'bulk',    qty:1,  months:1,   emoji:'🐕' },
+  { name:'Cat Food',                category:'Food & Drink', cadence:'bulk',    qty:1,  months:1,   emoji:'🐈' },
+  // Health
+  { name:'Paracetamol (32-pack)',   category:'Health',       cadence:'bulk',    qty:1,  months:6,   emoji:'💊' },
+  { name:'Ibuprofen (32-pack)',     category:'Health',       cadence:'bulk',    qty:1,  months:6,   emoji:'💊' },
+  { name:'Multivitamins',           category:'Health',       cadence:'monthly', qty:1,  months:1,   emoji:'💊' },
+  { name:'Vitamin D (90 caps)',     category:'Health',       cadence:'bulk',    qty:1,  months:3,   emoji:'☀️' },
+  { name:'Vitamin C',               category:'Health',       cadence:'monthly', qty:1,  months:1,   emoji:'🍊' },
+  { name:'Omega 3 Fish Oil',        category:'Health',       cadence:'monthly', qty:1,  months:1,   emoji:'🐟' },
+  { name:'Plasters (assorted)',     category:'Health',       cadence:'bulk',    qty:1,  months:6,   emoji:'🩹' },
+  { name:'Antiseptic Cream',        category:'Health',       cadence:'bulk',    qty:1,  months:12,  emoji:'🩺' },
+  { name:'Indigestion Tablets',     category:'Health',       cadence:'bulk',    qty:1,  months:6,   emoji:'💊' },
+  { name:'Antihistamine',           category:'Health',       cadence:'bulk',    qty:1,  months:6,   emoji:'💊' },
+  // Garden
+  { name:'Lawn Feed',               category:'Garden',       cadence:'bulk',    qty:1,  months:3,   emoji:'🌱' },
+  { name:'Compost (60L)',           category:'Garden',       cadence:'bulk',    qty:1,  months:3,   emoji:'🌿' },
+  { name:'Slug Pellets',            category:'Garden',       cadence:'bulk',    qty:1,  months:3,   emoji:'🐌' },
+  { name:'Bird Seed',               category:'Garden',       cadence:'monthly', qty:1,  months:1,   emoji:'🐦' },
+  { name:'Plant Feed',              category:'Garden',       cadence:'monthly', qty:1,  months:2,   emoji:'🌻' },
+  { name:'BBQ Charcoal',            category:'Garden',       cadence:'bulk',    qty:1,  months:2,   emoji:'🔥' },
+  { name:'BBQ Gas Cylinder',        category:'Garden',       cadence:'bulk',    qty:1,  months:3,   emoji:'🔥' },
+  { name:'Log Burner Fuel',         category:'Garden',       cadence:'bulk',    qty:1,  months:1,   emoji:'🪵' },
+  // Other
+  { name:'AA Batteries (16pk)',     category:'Other',        cadence:'bulk',    qty:16, months:6,   emoji:'🔋' },
+  { name:'AAA Batteries (16pk)',    category:'Other',        cadence:'bulk',    qty:16, months:6,   emoji:'🔋' },
+  { name:'Printer Ink',             category:'Other',        cadence:'bulk',    qty:1,  months:3,   emoji:'🖨️' },
+  { name:'Printer Paper (500pk)',   category:'Other',        cadence:'bulk',    qty:1,  months:3,   emoji:'📄' },
+  { name:'Postage Stamps (12pk)',   category:'Other',        cadence:'bulk',    qty:12, months:6,   emoji:'✉️' },
+  { name:'Light Bulbs (4pk)',       category:'Other',        cadence:'bulk',    qty:4,  months:12,  emoji:'💡' },
+  { name:'Smoke Alarm Battery',     category:'Other',        cadence:'bulk',    qty:1,  months:12,  emoji:'🔋', replacementInterval:12, replacementUnit:'months' },
+  { name:'Water Filter Cartridge',  category:'Other',        cadence:'bulk',    qty:1,  months:2,   emoji:'💧', replacementInterval:2, replacementUnit:'months' },
+  { name:'Candles',                 category:'Other',        cadence:'bulk',    qty:1,  months:3,   emoji:'🕯️' },
+  { name:'Tin Foil (30m)',          category:'Other',        cadence:'bulk',    qty:1,  months:3,   emoji:'🫙' },
 ];
 
-function openTemplatesModal() {
+let activeTemplateCat = 'all';
+
+function filterTemplates(cat, btn) {
+  activeTemplateCat = cat;
+  document.querySelectorAll('#template-cat-filter button').forEach(b => b.style.background = '');
+  if (btn) btn.style.background = 'var(--surface2)';
+  renderTemplateGrid();
+}
+
+function renderTemplateGrid() {
   const grid = document.getElementById('templates-grid');
-  grid.innerHTML = ITEM_TEMPLATES.map((t, i) =>
-    `<button onclick="applyTemplate(${i})"
-      style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;cursor:pointer;text-align:left;transition:border-color 0.15s"
+  if (!grid) return;
+  const filtered = activeTemplateCat === 'all'
+    ? ITEM_TEMPLATES
+    : ITEM_TEMPLATES.filter(t => t.category === activeTemplateCat);
+  grid.innerHTML = filtered.map((t, i) => {
+    const realIdx = ITEM_TEMPLATES.indexOf(t);
+    return `<button onclick="applyTemplate(${realIdx})"
+      style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:10px;cursor:pointer;text-align:left;transition:border-color 0.15s;width:100%"
       onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">
-      <span style="font-size:22px">${t.emoji}</span>
-      <div>
-        <div style="font-size:13px;font-weight:600;color:var(--text)">${esc(t.name)}</div>
-        <div style="font-size:11px;color:var(--muted)">${t.category} · ${t.months}mo supply</div>
+      <span style="font-size:22px;flex-shrink:0">${t.emoji}</span>
+      <div style="min-width:0">
+        <div style="font-size:12px;font-weight:600;color:var(--text);line-height:1.3">${esc(t.name)}</div>
+        <div style="font-size:10px;color:var(--muted);margin-top:2px">${t.months}mo supply${t.replacementInterval ? ' · 🔔 reminder' : ''}</div>
       </div>
-    </button>`
-  ).join('');
+    </button>`;
+  }).join('');
+}
+
+function openTemplatesModal() {
+  activeTemplateCat = 'all';
+  // Reset category filter highlight
+  document.querySelectorAll('#template-cat-filter button').forEach((b, i) => {
+    b.style.background = i === 0 ? 'var(--surface2)' : '';
+  });
+  renderTemplateGrid();
   openModal('templates-modal');
 }
 
 function applyTemplate(idx) {
   const t = ITEM_TEMPLATES[idx];
   closeModal('templates-modal');
-  // Pre-fill the add form
   document.getElementById('f-name').value     = t.name;
   document.getElementById('f-category').value = t.category;
   document.getElementById('f-cadence').value  = t.cadence;
   document.getElementById('f-qty').value      = t.qty;
   document.getElementById('f-months').value   = t.months;
+  // Pre-fill replacement reminder if template has one
+  const replIntervalEl = document.getElementById('f-replace-interval');
+  const replUnitEl     = document.getElementById('f-replace-unit');
+  if (replIntervalEl) replIntervalEl.value = t.replacementInterval || '';
+  if (replUnitEl && t.replacementUnit) replUnitEl.value = t.replacementUnit;
   document.getElementById('f-name').focus();
   toast(`Template: ${t.name}`);
 }
@@ -2989,8 +3229,381 @@ function clearQuickAddedFlag(id) {
 }
 
 // ═══════════════════════════════════════════
-//  DELIVERY TRACKING — ORDERED FLAG
+//  REMINDERS SYSTEM
 // ═══════════════════════════════════════════
+
+const REMINDER_SUGGESTIONS = [
+  { name: 'Toothbrush Head',       interval: 3,  unit: 'months' },
+  { name: 'Water Filter Cartridge',interval: 2,  unit: 'months' },
+  { name: 'Shower Head',           interval: 6,  unit: 'months' },
+  { name: 'Air Filter',            interval: 3,  unit: 'months' },
+  { name: 'Smoke Alarm Battery',   interval: 12, unit: 'months' },
+  { name: 'Fridge Filter',         interval: 6,  unit: 'months' },
+  { name: 'Razor Blade',           interval: 2,  unit: 'weeks'  },
+  { name: 'Dishwasher Filter',     interval: 1,  unit: 'months' },
+  { name: 'Car Air Filter',        interval: 12, unit: 'months' },
+  { name: 'Boiler Service',        interval: 12, unit: 'months' },
+  { name: 'Vacuum Filter',         interval: 3,  unit: 'months' },
+  { name: 'Contact Lenses',        interval: 30, unit: 'days'   },
+];
+
+let reminders = []; // separate from items[]
+let editingReminderId = null;
+let loggingReminderId = null;
+
+// ── Persistence ───────────────────────────
+function loadReminders() {
+  try {
+    const raw = localStorage.getItem('stockroom_reminders');
+    if (raw) reminders = JSON.parse(raw) || [];
+  } catch(e) { reminders = []; }
+}
+
+function saveReminders() {
+  try { localStorage.setItem('stockroom_reminders', JSON.stringify(reminders)); } catch(e){}
+}
+
+// ── Calculations ──────────────────────────
+function getReminderIntervalDays(reminder) {
+  const n = reminder.interval || 1;
+  if (reminder.unit === 'days')   return n;
+  if (reminder.unit === 'weeks')  return n * 7;
+  if (reminder.unit === 'months') return n * 30.5;
+  return n * 30.5;
+}
+
+function getReminderDueDate(reminder) {
+  if (!reminder.lastReplaced) return null;
+  const lastMs   = new Date(reminder.lastReplaced + 'T12:00:00').getTime();
+  const intervalMs = getReminderIntervalDays(reminder) * 86400000;
+  return new Date(lastMs + intervalMs);
+}
+
+function getReminderDaysUntil(reminder) {
+  const due = getReminderDueDate(reminder);
+  if (!due) return null;
+  return Math.round((due.getTime() - Date.now()) / 86400000);
+}
+
+function getReminderStatus(reminder) {
+  const days = getReminderDaysUntil(reminder);
+  if (days === null)  return 'unknown';
+  if (days < 0)       return 'overdue';
+  if (days <= 30)     return 'soon';
+  return 'upcoming';
+}
+
+// ── Render ────────────────────────────────
+function renderReminders() {
+  loadReminders();
+
+  // Also collect reminders embedded in items
+  const allReminders = [
+    ...reminders,
+    ...items
+      .filter(i => i.replacementInterval && i.replacementUnit)
+      .map(i => ({
+        id:           'item_' + i.id,
+        name:         i.name,
+        interval:     i.replacementInterval,
+        unit:         i.replacementUnit,
+        lastReplaced: i.lastReplaced || null,
+        notes:        i.notes || '',
+        fromItem:     i.id,
+      })),
+  ];
+
+  const overdue  = allReminders.filter(r => getReminderStatus(r) === 'overdue');
+  const soon     = allReminders.filter(r => getReminderStatus(r) === 'soon');
+  const upcoming = allReminders.filter(r => getReminderStatus(r) === 'upcoming');
+  const unknown  = allReminders.filter(r => getReminderStatus(r) === 'unknown');
+
+  const empty = document.getElementById('reminders-empty');
+  if (allReminders.length === 0) {
+    if (empty) empty.style.display = 'block';
+    ['overdue-section','soon-section','upcoming-section'].forEach(s => {
+      const el = document.getElementById('reminders-' + s);
+      if (el) el.style.display = 'none';
+    });
+    const nudge = document.getElementById('reminders-nudge');
+    if (nudge) nudge.style.display = 'none';
+    return;
+  }
+  if (empty) empty.style.display = 'none';
+
+  // Nudge bar
+  const nudge     = document.getElementById('reminders-nudge');
+  const nudgeText = document.getElementById('reminders-nudge-text');
+  if (nudge && overdue.length > 0) {
+    nudge.style.display = 'flex';
+    nudgeText.textContent = `🔴 ${overdue.length} replacement${overdue.length !== 1 ? 's' : ''} overdue`;
+  } else if (nudge) {
+    nudge.style.display = 'none';
+  }
+
+  // Render each section
+  const renderSection = (list, containerId, sectionId, countId) => {
+    const section   = document.getElementById(sectionId);
+    const container = document.getElementById(containerId);
+    const countEl   = document.getElementById(countId);
+    if (!section || !container) return;
+    if (!list.length) { section.style.display = 'none'; return; }
+    section.style.display = 'block';
+    if (countEl) countEl.textContent = list.length;
+    container.innerHTML = list.map(r => reminderCardHTML(r)).join('');
+  };
+
+  // Sort overdue by most overdue first
+  overdue.sort((a,b)  => (getReminderDaysUntil(a)||0) - (getReminderDaysUntil(b)||0));
+  soon.sort((a,b)     => (getReminderDaysUntil(a)||0) - (getReminderDaysUntil(b)||0));
+  upcoming.sort((a,b) => (getReminderDaysUntil(a)||0) - (getReminderDaysUntil(b)||0));
+
+  renderSection([...overdue], 'reminders-overdue-list',    'reminders-overdue-section', 'overdue-count');
+  renderSection([...soon],    'reminders-soon-list',       'reminders-soon-section',    'soon-count');
+  renderSection([...upcoming, ...unknown], 'reminders-upcoming-list', 'reminders-upcoming-section', null);
+
+  // Also update stock view badge if reminders are overdue
+  updateRemindersBadge(overdue.length + soon.length);
+}
+
+function reminderCardHTML(r) {
+  const days     = getReminderDaysUntil(r);
+  const status   = getReminderStatus(r);
+  const dueDate  = getReminderDueDate(r);
+  const isFromItem = r.fromItem;
+
+  const statusColor = status === 'overdue' ? 'var(--danger)' : status === 'soon' ? 'var(--warn)' : 'var(--muted)';
+  const borderColor = status === 'overdue' ? 'rgba(232,80,80,0.3)' : status === 'soon' ? 'rgba(232,168,56,0.3)' : 'var(--border)';
+
+  let timeLabel = '';
+  if (days === null) {
+    timeLabel = 'No replacement date recorded';
+  } else if (days < 0) {
+    timeLabel = `Overdue by ${Math.abs(days)} day${Math.abs(days) !== 1 ? 's' : ''}`;
+  } else if (days === 0) {
+    timeLabel = 'Due today';
+  } else {
+    timeLabel = `Due in ${days} day${days !== 1 ? 's' : ''}`;
+  }
+
+  const intervalLabel = `Every ${r.interval} ${r.unit}`;
+  const lastLabel = r.lastReplaced ? `Last replaced ${timeAgo(r.lastReplaced)}` : 'Never replaced';
+  const nextLabel = dueDate ? `Next: ${fmtDate(dueDate.toISOString().slice(0,10))}` : 'Set a date to track';
+
+  return `<div style="background:var(--surface);border:1px solid ${borderColor};border-radius:12px;padding:14px 16px;margin-bottom:10px;display:flex;gap:12px;align-items:flex-start">
+    <div style="flex:1;min-width:0">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
+        <span style="font-size:15px;font-weight:700;color:var(--text)">${esc(r.name)}</span>
+        ${isFromItem ? `<span style="font-size:10px;color:var(--muted);font-family:var(--mono);padding:1px 6px;border:1px solid var(--border);border-radius:99px">linked</span>` : ''}
+      </div>
+      <div style="font-size:12px;font-weight:700;color:${statusColor};margin-bottom:4px">${timeLabel}</div>
+      <div style="font-size:11px;color:var(--muted);font-family:var(--mono);line-height:1.8">
+        ${intervalLabel} · ${lastLabel}<br>${nextLabel}
+      </div>
+      ${r.notes ? `<div style="font-size:12px;color:var(--muted);font-style:italic;margin-top:6px">💬 ${esc(r.notes)}</div>` : ''}
+      <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap">
+        <button class="btn btn-primary btn-sm" onclick="openLogReplacementModal('${r.id}')">✅ Mark replaced</button>
+        ${!isFromItem ? `<button class="btn btn-ghost btn-sm" onclick="openEditReminderModal('${r.id}')">✏️ Edit</button>` : `<button class="btn btn-ghost btn-sm" onclick="openEditModal('${r.fromItem}');enableItemEdit()">✏️ Edit item</button>`}
+        ${!isFromItem ? `<button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="deleteReminder('${r.id}')">Delete</button>` : ''}
+      </div>
+    </div>
+  </div>`;
+}
+
+function updateRemindersBadge(count) {
+  // Add a badge to the Reminders tab if there are overdue/soon items
+  const tab = [...document.querySelectorAll('.tab')].find(t => t.textContent.includes('Reminders'));
+  if (!tab) return;
+  const existing = tab.querySelector('.reminder-badge');
+  if (existing) existing.remove();
+  if (count > 0) {
+    const badge = document.createElement('span');
+    badge.className = 'reminder-badge';
+    badge.textContent = count;
+    badge.style.cssText = 'background:var(--danger);color:#fff;font-size:9px;font-weight:700;padding:1px 5px;border-radius:99px;margin-left:4px;font-family:var(--mono)';
+    tab.appendChild(badge);
+  }
+}
+
+// ── Add / Edit ─────────────────────────────
+function openAddReminderModal(prefill) {
+  editingReminderId = null;
+  document.getElementById('reminder-modal-title').textContent = '🔔 Add Reminder';
+  document.getElementById('r-name').value          = prefill?.name     || '';
+  document.getElementById('r-interval').value      = prefill?.interval || 3;
+  document.getElementById('r-unit').value          = prefill?.unit     || 'months';
+  document.getElementById('r-last-replaced').value = '';
+  document.getElementById('r-notes').value         = '';
+  document.getElementById('r-item-link').value     = '';
+
+  // Populate item link dropdown
+  const sel = document.getElementById('r-item-link');
+  sel.innerHTML = '<option value="">— standalone reminder —</option>'
+    + items.filter(i => !i.quickAdded).map(i => `<option value="${i.id}">${esc(i.name)}</option>`).join('');
+
+  // Render suggestion chips
+  const sugg = document.getElementById('reminder-suggestions');
+  sugg.innerHTML = REMINDER_SUGGESTIONS.map(s =>
+    `<button onclick="applySuggestion(${JSON.stringify(s).replace(/"/g,'&quot;')})"
+      style="font-size:11px;padding:4px 10px;border-radius:99px;background:var(--surface2);border:1px solid var(--border);color:var(--text);cursor:pointer;white-space:nowrap"
+      onmouseover="this.style.borderColor='var(--accent)'" onmouseout="this.style.borderColor='var(--border)'">${esc(s.name)}</button>`
+  ).join('');
+
+  openModal('reminder-modal');
+  setTimeout(() => document.getElementById('r-name').focus(), 100);
+}
+
+function applySuggestion(s) {
+  document.getElementById('r-name').value     = s.name;
+  document.getElementById('r-interval').value = s.interval;
+  document.getElementById('r-unit').value     = s.unit;
+}
+
+function openEditReminderModal(id) {
+  const r = reminders.find(r => r.id === id);
+  if (!r) return;
+  editingReminderId = id;
+  document.getElementById('reminder-modal-title').textContent = '🔔 Edit Reminder';
+  document.getElementById('r-name').value          = r.name     || '';
+  document.getElementById('r-interval').value      = r.interval || 3;
+  document.getElementById('r-unit').value          = r.unit     || 'months';
+  document.getElementById('r-last-replaced').value = r.lastReplaced || '';
+  document.getElementById('r-notes').value         = r.notes    || '';
+  const sel = document.getElementById('r-item-link');
+  sel.innerHTML = '<option value="">— standalone reminder —</option>'
+    + items.filter(i => !i.quickAdded).map(i => `<option value="${i.id}">${esc(i.name)}</option>`).join('');
+  sel.value = r.linkedItemId || '';
+  openModal('reminder-modal');
+}
+
+function saveReminder() {
+  const name = document.getElementById('r-name').value.trim();
+  if (!name) { toast('Enter a name for this reminder'); return; }
+
+  const intervalVal = parseInt(document.getElementById('r-interval').value) || 3;
+  const unit        = document.getElementById('r-unit').value;
+  const lastDate    = document.getElementById('r-last-replaced').value;
+  const notes       = document.getElementById('r-notes').value.trim();
+  const linkedItemId = document.getElementById('r-item-link').value || null;
+
+  if (editingReminderId) {
+    const r = reminders.find(r => r.id === editingReminderId);
+    if (r) {
+      r.name = name; r.interval = intervalVal; r.unit = unit;
+      r.lastReplaced = lastDate || r.lastReplaced; r.notes = notes;
+      r.linkedItemId = linkedItemId;
+    }
+  } else {
+    reminders.push({
+      id:           uid(),
+      name,
+      interval:     intervalVal,
+      unit,
+      lastReplaced: lastDate || null,
+      notes,
+      linkedItemId,
+      createdAt:    new Date().toISOString(),
+    });
+  }
+
+  // Also update linked item's replacement fields
+  if (linkedItemId) {
+    const item = items.find(i => i.id === linkedItemId);
+    if (item) {
+      item.replacementInterval = intervalVal;
+      item.replacementUnit     = unit;
+      item.lastReplaced        = lastDate || item.lastReplaced || null;
+      touchItem(item);
+      saveData();
+    }
+  }
+
+  saveReminders();
+  closeModal('reminder-modal');
+  renderReminders();
+  setTimeout(syncAll, 400);
+  toast('Reminder saved ✓');
+}
+
+function deleteReminder(id) {
+  if (!confirm('Delete this reminder?')) return;
+  reminders = reminders.filter(r => r.id !== id);
+  saveReminders();
+  renderReminders();
+  toast('Reminder deleted');
+}
+
+// ── Log replacement ───────────────────────
+function openLogReplacementModal(id) {
+  loggingReminderId = id;
+  const isItem   = id.startsWith('item_');
+  const itemId   = isItem ? id.replace('item_', '') : null;
+  const item     = itemId ? items.find(i => i.id === itemId) : null;
+  const reminder = !isItem ? reminders.find(r => r.id === id) : null;
+  const name     = item?.name || reminder?.name || '';
+  const interval = item ? `${item.replacementInterval} ${item.replacementUnit}` : reminder ? `${reminder.interval} ${reminder.unit}` : '';
+
+  document.getElementById('log-replacement-title').textContent    = `Replaced: ${name}`;
+  document.getElementById('log-replacement-subtitle').textContent = interval ? `Next replacement in ${interval}` : 'When did you replace it?';
+  document.getElementById('log-replacement-date').value           = today();
+  openModal('log-replacement-modal');
+}
+
+function confirmLogReplacement() {
+  const date     = document.getElementById('log-replacement-date').value || today();
+  const id       = loggingReminderId;
+  const isItem   = id.startsWith('item_');
+  const itemId   = isItem ? id.replace('item_', '') : null;
+
+  if (itemId) {
+    const item = items.find(i => i.id === itemId);
+    if (item) { item.lastReplaced = date; touchItem(item); saveData(); }
+  } else {
+    const r = reminders.find(r => r.id === id);
+    if (r) { r.lastReplaced = date; saveReminders(); }
+    // Also update linked item
+    if (r?.linkedItemId) {
+      const item = items.find(i => i.id === r.linkedItemId);
+      if (item) { item.lastReplaced = date; touchItem(item); saveData(); }
+    }
+  }
+
+  closeModal('log-replacement-modal');
+  renderReminders();
+  setTimeout(syncAll, 400);
+  toast('Replacement logged ✓');
+}
+
+// ── In-app notification check ─────────────
+function checkReminderNotifications() {
+  if (!notifEnabled || Notification.permission !== 'granted') return;
+
+  const allReminders = [
+    ...reminders,
+    ...items.filter(i => i.replacementInterval).map(i => ({
+      id: 'item_' + i.id, name: i.name, interval: i.replacementInterval,
+      unit: i.replacementUnit, lastReplaced: i.lastReplaced,
+    })),
+  ];
+
+  const overdue = allReminders.filter(r => getReminderStatus(r) === 'overdue');
+  const dueToday = allReminders.filter(r => getReminderDaysUntil(r) === 0);
+
+  if (!overdue.length && !dueToday.length) return;
+
+  const today2 = new Date().toISOString().slice(0,10);
+  if (localStorage.getItem('stockroom_last_reminder_notif') === today2) return;
+
+  const title = overdue.length
+    ? `🔔 ${overdue.length} replacement${overdue.length !== 1 ? 's' : ''} overdue`
+    : `🔔 Replacement due today`;
+  const body = [...overdue, ...dueToday].slice(0,3).map(r => `• ${r.name}`).join('\n');
+
+  sendLocalNotification(title, body, 'stockroom-reminders');
+  localStorage.setItem('stockroom_last_reminder_notif', today2);
+}
+
+
 function markOrdered(id) {
   const item = items.find(i => i.id === id);
   if (!item) return;
@@ -5324,7 +5937,8 @@ function showView(name, btn) {
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.getElementById('view-'+name).classList.add('active');
   btn.classList.add('active');
-  if (name === 'report') { renderReport(); if (spendVisible) renderSpendChart(); }
+  if (name === 'report')    { renderReport(); if (spendVisible) renderSpendChart(); }
+  if (name === 'reminders') renderReminders();
   if (name === 'shopping') renderShoppingList();
   if (name === 'savings')  renderSavingsView();
 }
@@ -5675,6 +6289,10 @@ function openEditModal(id) {
   const thresholdEl = document.getElementById('f-threshold');
   if (expiryEl)    expiryEl.value    = item.expiry || '';
   if (thresholdEl) thresholdEl.value = item.thresholdOverride != null ? item.thresholdOverride : '';
+  const replIntervalEl = document.getElementById('f-replace-interval');
+  const replUnitEl     = document.getElementById('f-replace-unit');
+  if (replIntervalEl) replIntervalEl.value = item.replacementInterval || '';
+  if (replUnitEl)     replUnitEl.value     = item.replacementUnit     || 'months';
   currentRating = item.rating || 0;
   renderStars();
   const last = item.logs?.at(-1);
@@ -5730,6 +6348,9 @@ function saveItem() {
       item.expiry       = document.getElementById('f-expiry')?.value || null;
       const tOverride   = parseInt(document.getElementById('f-threshold')?.value);
       item.thresholdOverride = isNaN(tOverride) ? null : tOverride;
+      const replInterval = parseInt(document.getElementById('f-replace-interval')?.value);
+      item.replacementInterval = isNaN(replInterval) ? null : replInterval;
+      item.replacementUnit     = document.getElementById('f-replace-unit')?.value || 'months';
 
       // Update the most recent log entry's date and qty
       const lastDate  = document.getElementById('f-last-date').value;
@@ -6547,11 +7168,14 @@ function init() {
   loadProfile(activeProfile);
   renderAll();
   loadNotifSettings();
+  loadReminders();
+  renderReminders(); // pre-render for badge count
   // Sync immediately on load
   setTimeout(() => { lastAutoSync = Date.now(); checkCloudAhead(); }, 1500);
   if (migrated) setTimeout(syncAll, 1500);
   setTimeout(checkScheduledEmail, 2000);
   setTimeout(checkLowStockNotifications, 3000);
+  setTimeout(checkReminderNotifications, 3500);
 }
 
 init();
