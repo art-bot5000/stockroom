@@ -6737,29 +6737,38 @@ function updateStockShoppingHeader(mode) {
   }
 }
 
+function setStockOnlyUI(visible) {
+  const ids = ['health-dashboard', 'filter-toggle-btn', 'sort-select', 'compact-toggle-btn', 'filter-panel', 'tag-filter-bar', 'sns-banner', 'pending-deliveries-section', 'incomplete-section'];
+  ids.forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = visible ? '' : 'none';
+  });
+  // The filter toolbar wrapper (parent of the sort/filter row)
+  const filterWrap = document.querySelector('#view-stock > div:nth-child(5)');
+  if (filterWrap) filterWrap.style.display = visible ? '' : 'none';
+}
+
 function switchToStock() {
-  // Ensure view-stock is the active view
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.getElementById('view-stock').classList.add('active');
   const stockTab = [...document.querySelectorAll('.tab')].find(t => t.textContent.includes('Stockroom'));
   if (stockTab) stockTab.classList.add('active');
-  // Swap inner panels
   document.getElementById('items-grid').style.display = '';
   document.getElementById('shopping-panel').style.display = 'none';
+  setStockOnlyUI(true);
   updateStockShoppingHeader('stock');
 }
 
 function switchToShopping() {
-  // Keep view-stock active (shopping is a sub-panel inside it)
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
   document.getElementById('view-stock').classList.add('active');
   const stockTab = [...document.querySelectorAll('.tab')].find(t => t.textContent.includes('Stockroom'));
   if (stockTab) stockTab.classList.add('active');
-  // Swap inner panels
   document.getElementById('items-grid').style.display = 'none';
   document.getElementById('shopping-panel').style.display = '';
+  setStockOnlyUI(false);
   renderShoppingList();
   updateStockShoppingHeader('shopping');
 }
@@ -6777,7 +6786,7 @@ function showView(name, btn) {
   if (name === 'savings')   renderSavingsView();
   if (name === 'grocery')   renderGrocery();
   // Reset shared header to stock mode whenever a tab (not the inline link) is clicked
-  if (name === 'stock') updateStockShoppingHeader('stock');
+  if (name === 'stock') { updateStockShoppingHeader('stock'); setStockOnlyUI(true); }
 }
 
 function getShoppingItems() {
