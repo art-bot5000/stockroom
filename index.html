@@ -765,6 +765,12 @@
   <button class="btn btn-blue btn-sm" onclick="syncNowAndDismissBanner()">Sync Now</button>
 </div>
 
+<!-- Drive re-auth banner -->
+<div id="reauth-banner" style="display:none;background:rgba(232,80,80,0.1);border-bottom:1px solid rgba(232,80,80,0.3);padding:10px 20px;align-items:center;justify-content:space-between;gap:12px;font-size:13px">
+  <span>🔑 <strong>Drive session expired</strong> — tap to reconnect and resume syncing</span>
+  <button class="btn btn-sm" style="background:rgba(232,80,80,0.2);border:1px solid rgba(232,80,80,0.4);color:var(--danger);white-space:nowrap" onclick="triggerReAuth()">Reconnect →</button>
+</div>
+
 <!-- Incomplete items nudge banner -->
 <div id="incomplete-banner" style="display:none;background:rgba(232,168,56,0.12);border-bottom:1px solid rgba(232,168,56,0.3);padding:10px 20px;align-items:center;justify-content:space-between;gap:12px;font-size:13px;cursor:pointer" onclick="scrollToIncomplete()">
   <span>⚡ <strong id="incomplete-banner-text">Items need setting up</strong> — tap to complete them</span>
@@ -8017,6 +8023,7 @@ async function syncNow() {
       items, settings, lastSynced: settings.lastSynced,
       groceries: groceryItems, departments: groceryDepts, reminders, deletedIds: [...remainingTombstones],
     }));
+    hideReAuthBanner();
     updateSyncPill('synced');
 
   } catch(err) {
@@ -8031,15 +8038,56 @@ async function syncNow() {
   }
 }
 
-function silentReAuth() {
-  if (!driveConnected) return;
-  // Can't do silent re-auth with code flow — just reconnect normally
-  // Show a subtle indicator rather than redirecting without warning
+let _reAuthInProgress = false;
+
+async function silentReAuth() {
+  if (!driveConnected || _reAuthInProgress) return;
+  _reAuthInProgress = true;
+  updateSyncPill('syncing');
+
+  try {
+    // Step 1: try to get a fresh token from the backend using the stored refresh token
+    const res  = await fetch(`${WORKER_URL}/auth/refresh?provider=google`);
+    const data = await res.json();
+    if (res.ok && data.access_token) {
+      accessToken = data.access_token;
+      try { sessionStorage.setItem('stockroom_access_token', data.access_token); } catch(e){}
+      _reAuthInProgress = false;
+      console.log('Drive: silent token refresh succeeded');
+      // Retry the sync now that we have a fresh token
+      await syncNow();
+      return;
+    }
+  } catch(e) {
+    console.warn('Drive: silent refresh failed:', e.message);
+  }
+
+  // Step 2: refresh failed (no stored refresh token, or Google revoked it) — show re-auth banner
+  _reAuthInProgress = false;
+  accessToken = null;
   updateSyncPill('error');
-  const label = document.getElementById('sync-label');
-  if (label) label.textContent = 'Re-auth needed';
-  // Show a toast nudging the user to reconnect
-  toast('Drive session expired — reconnect in Settings');
+  showReAuthBanner();
+}
+
+function showReAuthBanner() {
+  const b = document.getElementById('reauth-banner');
+  if (b) b.style.display = 'flex';
+}
+
+function hideReAuthBanner() {
+  const b = document.getElementById('reauth-banner');
+  if (b) b.style.display = 'none';
+}
+
+function triggerReAuth() {
+  // Store current view so we come back here after auth
+  try {
+    const currentTab = [...document.querySelectorAll('.tab')].find(t => t.classList.contains('active'));
+    const viewName   = currentTab?.textContent?.trim() || '';
+    sessionStorage.setItem('stockroom_pre_auth_view', viewName.includes('Settings') ? 'settings' : 'stock');
+  } catch(e){}
+  hideReAuthBanner();
+  connectDrive();
 }
 
 async function uploadToDrive(payload) {
