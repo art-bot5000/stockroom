@@ -1,6 +1,6 @@
 // ── INCREMENT THIS VERSION NUMBER EVERY TIME YOU DEPLOY ──────
 // The browser detects a change in this file and triggers the update flow
-const CACHE_VERSION = 'stockroom-v3';
+const CACHE_VERSION = 'stockroom-v4';
 const CACHE_NAME    = CACHE_VERSION;
 
 const CACHE_URLS = [
