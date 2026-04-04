@@ -100,10 +100,11 @@
   ::view-transition-new(main-view) { animation: 260ms cubic-bezier(0.4,0,0.2,1) both vt-slide-in-right; }
   ::view-transition-old(main-view-back) { animation: 220ms cubic-bezier(0.4,0,0.2,1) both vt-slide-out-right; }
   ::view-transition-new(main-view-back) { animation: 260ms cubic-bezier(0.4,0,0.2,1) both vt-slide-in-left; }
-  ::view-transition-old(modal-layer) { animation: 180ms ease both vt-fade-out; }
-  ::view-transition-new(modal-layer) { animation: 220ms ease both vt-fade-in; }
+  ::view-transition-old(modal-layer) { animation: 90ms ease both vt-fade-out; }
+  ::view-transition-new(modal-layer) { animation: 110ms ease both vt-fade-in; }
 
-  #main { view-transition-name: main-view; }
+  #main { view-transition-name: none; }
+  #view-content { view-transition-name: main-view; }
 
   @media (prefers-reduced-motion: reduce) {
     ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
@@ -781,6 +782,8 @@
     <button class="tab" onclick="showView('settings',this)">⚙️ Settings</button>
   </div>
 
+  <div id="view-content">
+
   <!-- STOCK VIEW -->
   <div class="view active" id="view-stock">
 
@@ -1213,6 +1216,7 @@
     <button class="btn btn-ghost btn-sm" onclick="clearCheckedGrocery()">Clear checked</button>
   </div>
 </div>
+  </div><!-- end #view-content -->
 
 </div><!-- end #main -->
 
@@ -6830,8 +6834,8 @@ function _doTransition(direction, fn) {
   if (!_vtSupported() || window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
     fn(); return;
   }
-  const main = document.getElementById('main');
-  main.style.viewTransitionName = direction === 'back' ? 'main-view-back' : 'main-view';
+  const content = document.getElementById('view-content');
+  if (content) content.style.viewTransitionName = direction === 'back' ? 'main-view-back' : 'main-view';
   document.startViewTransition(() => { fn(); });
 }
 
@@ -6878,28 +6882,23 @@ function switchToShopping() {
 function showShoppingListInline() { switchToShopping(); }
 
 function showView(name, btn) {
-  const fromIdx = TAB_ORDER.indexOf(_currentView);
-  const toIdx   = TAB_ORDER.indexOf(name);
-  const dir     = (toIdx >= fromIdx) ? 'forward' : 'back';
-
-  _doTransition(dir, () => {
-    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
-    document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
-    document.getElementById('view-'+name).classList.add('active');
-    btn.classList.add('active');
-    if (name === 'report')    { renderReport(); if (spendVisible) renderSpendChart(); }
-    if (name === 'reminders') renderReminders();
-    if (name === 'shopping')  renderShoppingList();
-    if (name === 'savings')   renderSavingsView();
-    if (name === 'grocery')   renderGrocery();
-    if (name === 'stock') {
-      updateStockShoppingHeader('stock');
-      setStockOnlyUI(true);
-      document.getElementById('items-grid').style.display = '';
-      document.getElementById('shopping-panel').style.display = 'none';
-    }
-    _currentView = name;
-  });
+  // Tab switches are instant — no transition (feels snappier on the tab bar)
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('view-'+name).classList.add('active');
+  btn.classList.add('active');
+  if (name === 'report')    { renderReport(); if (spendVisible) renderSpendChart(); }
+  if (name === 'reminders') renderReminders();
+  if (name === 'shopping')  renderShoppingList();
+  if (name === 'savings')   renderSavingsView();
+  if (name === 'grocery')   renderGrocery();
+  if (name === 'stock') {
+    updateStockShoppingHeader('stock');
+    setStockOnlyUI(true);
+    document.getElementById('items-grid').style.display = '';
+    document.getElementById('shopping-panel').style.display = 'none';
+  }
+  _currentView = name;
 }
 
 function getShoppingItems() {
