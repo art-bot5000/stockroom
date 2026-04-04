@@ -19,9 +19,19 @@
     --text: #e8eaf2; --muted: #7880a0;
     --mono: 'Space Mono', monospace;
     --sans: 'Instrument Sans', system-ui, sans-serif;
+    /* ── Adaptive colour temperature (overridden by JS) ── */
+    --temp-tint: rgba(0,0,0,0);
+    --surface-opacity: 0.82;
+    --glass-blur: 14px;
+    --glass-border: rgba(255,255,255,0.07);
+    --glass-shadow: 0 8px 32px rgba(0,0,0,0.45), 0 1px 0 rgba(255,255,255,0.05) inset;
+    --card-shadow: 0 2px 12px rgba(0,0,0,0.35), 0 1px 0 rgba(255,255,255,0.04) inset;
+    --card-shadow-hover: 0 6px 24px rgba(0,0,0,0.5), 0 1px 0 rgba(255,255,255,0.06) inset;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { background: var(--bg); color: var(--text); font-family: var(--sans); min-height: 100vh; }
+  /* Ambient temperature tint overlay */
+  body::after { content:''; position:fixed; inset:0; background:var(--temp-tint); pointer-events:none; z-index:9999; transition:background 3s ease; }
 
   /* ── PWA INSTALL BANNER ── */
   #install-banner { display:none; position:fixed; bottom:0; left:0; right:0; z-index:997; background:var(--surface); border-top:1px solid var(--border); padding:14px 20px; align-items:center; gap:12px; box-shadow:0 -4px 20px rgba(0,0,0,0.3); }
@@ -33,21 +43,26 @@
 
   /* ── HEADER ── */
   #app-header {
-    background: var(--surface); border-bottom: 1px solid var(--border);
+    background: rgba(26,29,39,var(--surface-opacity));
+    border-bottom: 1px solid var(--glass-border);
+    backdrop-filter: blur(var(--glass-blur)) saturate(160%);
+    -webkit-backdrop-filter: blur(var(--glass-blur)) saturate(160%);
     padding: 0 20px; height: 56px; display: flex; align-items: center;
     justify-content: space-between; position: sticky; top: 0; z-index: 100;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.04), 0 4px 20px rgba(0,0,0,0.3);
   }
   .logo { font-family: var(--mono); font-size: 13px; letter-spacing: 3px; color: var(--accent); font-weight: 700; }
   .logo span { color: var(--muted); font-weight: 400; }
 
   /* ── BUTTONS ── */
-  .btn { font-family: var(--sans); font-size: 13px; font-weight: 600; padding: 8px 16px; border-radius: 6px; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: all 0.15s; }
-  .btn-primary { background: var(--accent); color: #111; }
-  .btn-primary:hover { background: #f0b84a; }
-  .btn-ghost { background: transparent; color: var(--muted); border: 1px solid var(--border); }
-  .btn-ghost:hover { color: var(--text); border-color: var(--muted); }
+  .btn { font-family: var(--sans); font-size: 13px; font-weight: 600; padding: 8px 16px; border-radius: 6px; border: none; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: all 0.18s cubic-bezier(0.34,1.56,0.64,1); position: relative; }
+  .btn:active { transform: scale(0.96); }
+  .btn-primary { background: var(--accent); color: #111; box-shadow: 0 2px 8px rgba(232,168,56,0.3), 0 1px 0 rgba(255,255,255,0.15) inset; }
+  .btn-primary:hover { background: #f0b84a; box-shadow: 0 4px 16px rgba(232,168,56,0.45), 0 1px 0 rgba(255,255,255,0.2) inset; transform: translateY(-1px); }
+  .btn-ghost { background: rgba(255,255,255,0.04); color: var(--muted); border: 1px solid var(--glass-border); backdrop-filter: blur(4px); }
+  .btn-ghost:hover { color: var(--text); background: rgba(255,255,255,0.08); border-color: rgba(255,255,255,0.12); }
   .btn-danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
-  .btn-danger:hover { background: var(--danger); color: #fff; }
+  .btn-danger:hover { background: var(--danger); color: #fff; box-shadow: 0 4px 14px rgba(232,80,80,0.35); }
   .btn-blue { background: var(--accent2); color: #fff; }
   .btn-blue:hover { background: #6f9ff5; }
 
@@ -58,9 +73,13 @@
   #main { max-width: 1100px; margin: 0 auto; padding: 24px 16px; }
 
   /* ── TABS ── */
-  #tabs { display: flex; gap: 4px; margin-bottom: 24px; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 4px; width: fit-content; }
-  .tab { font-family: var(--sans); font-size: 13px; font-weight: 700; padding: 8px 18px; border-radius: 7px; border: none; cursor: pointer; background: transparent; color: var(--muted); transition: all 0.15s; }
-  .tab.active { background: var(--accent); color: #111; }
+  #tabs { display: flex; gap: 4px; margin-bottom: 24px; background: rgba(26,29,39,0.7); border: 1px solid var(--glass-border); border-radius: 10px; padding: 4px; width: fit-content; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
+  .tab { font-family: var(--sans); font-size: 13px; font-weight: 700; padding: 8px 18px; border-radius: 7px; border: none; cursor: pointer; background: transparent; color: var(--muted); transition: all 0.2s cubic-bezier(0.34,1.56,0.64,1); position: relative; overflow: hidden; }
+  .tab.active { background: var(--accent); color: #111; box-shadow: 0 2px 8px rgba(232,168,56,0.35); }
+
+  @keyframes ripple-expand {
+    to { transform: scale(1); opacity: 0; }
+  }
 
   /* ── VIEWS ── */
   .view { display: none; }
@@ -74,8 +93,8 @@
   /* ── CARDS GRID ── */
   #items-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 14px; }
 
-  .item-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px; position: relative; transition: border-color 0.15s; }
-  .item-card:hover { border-color: var(--muted); }
+  .item-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 18px; position: relative; transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s cubic-bezier(0.34,1.56,0.64,1); box-shadow: var(--card-shadow); }
+  .item-card:hover { border-color: rgba(255,255,255,0.12); box-shadow: var(--card-shadow-hover); transform: translateY(-2px); }
   .card-top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
   .card-category { font-family: var(--mono); font-size: 10px; color: var(--muted); letter-spacing: 1px; text-transform: uppercase; }
   .card-name { font-size: 16px; font-weight: 700; line-height: 1.25; }
@@ -118,21 +137,21 @@
   .buy-chip { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 6px 12px; font-size: 12px; font-weight: 700; }
 
   /* ── SETTINGS ── */
-  .settings-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 22px; margin-bottom: 14px; }
-  .settings-card h3 { font-size: 14px; font-weight: 700; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
-  .setting-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid rgba(46,51,80,0.4); }
+  .settings-card { background: rgba(26,29,39,0.7); border: 1px solid var(--glass-border); border-radius: 14px; padding: 22px; margin-bottom: 14px; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); box-shadow: var(--card-shadow); }
+  .settings-card h3 { font-size: 14px; font-weight: 700; margin-bottom: 16px; padding-bottom: 12px; border-bottom: 1px solid var(--glass-border); }
+  .setting-row { display: flex; justify-content: space-between; align-items: center; padding: 12px 0; border-bottom: 1px solid rgba(46,51,80,0.3); }
   .setting-row:last-child { border-bottom: none; padding-bottom: 0; }
   .setting-info h4 { font-size: 14px; font-weight: 600; margin-bottom: 2px; }
   .setting-info p { font-size: 12px; color: var(--muted); }
 
   /* ── MODAL ── */
-  .modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.75); z-index: 200; align-items: center; justify-content: center; backdrop-filter: blur(4px); }
+  .modal-backdrop { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.6); z-index: 200; align-items: center; justify-content: center; backdrop-filter: blur(8px) saturate(120%); -webkit-backdrop-filter: blur(8px) saturate(120%); }
   .modal-backdrop.open { display: flex; }
-  .modal { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 28px; width: 95%; max-width: 520px; max-height: 90vh; overflow-y: auto; }
+  .modal { background: rgba(26,29,39,0.88); border: 1px solid var(--glass-border); border-radius: 20px; padding: 28px; width: 95%; max-width: 520px; max-height: 90vh; overflow-y: auto; backdrop-filter: blur(20px) saturate(160%); -webkit-backdrop-filter: blur(20px) saturate(160%); box-shadow: var(--glass-shadow), 0 0 0 1px rgba(255,255,255,0.03) inset; }
   .modal h2 { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
   .modal .subtitle { font-size: 13px; color: var(--muted); margin-bottom: 20px; }
-  .modal-footer { display: flex; gap: 10px; justify-content: flex-end; margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--border); }
-  .modal-section { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--border); }
+  .modal-footer { display: flex; gap: 10px; justify-content: flex-end; margin-top: 24px; padding-top: 18px; border-top: 1px solid var(--glass-border); }
+  .modal-section { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--glass-border); }
   .modal-section-label { font-size: 13px; font-weight: 700; margin-bottom: 12px; }
 
   /* ── FORM ── */
@@ -424,6 +443,47 @@
     /* ── PRICE HISTORY MODAL ── */
     #ph-table { overflow-x: auto; -webkit-overflow-scrolling: touch; }
   }
+
+  /* ══════════════════════════════════════
+     GROCERY LIST STYLES
+  ══════════════════════════════════════ */
+  .grocery-toolbar { display:flex; gap:8px; align-items:center; margin-bottom:14px; flex-wrap:wrap; }
+  .grocery-search { flex:1; min-width:160px; background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:9px 14px; color:var(--text); font-family:var(--sans); font-size:14px; outline:none; }
+  .grocery-search:focus { border-color:var(--accent); }
+  .grocery-sort-toggle { display:flex; background:var(--surface2); border:1px solid var(--border); border-radius:8px; overflow:hidden; }
+  .grocery-sort-btn { font-family:var(--sans); font-size:12px; font-weight:600; padding:8px 12px; border:none; background:transparent; color:var(--muted); cursor:pointer; transition:all 0.15s; white-space:nowrap; }
+  .grocery-sort-btn.active { background:var(--accent); color:#111; }
+  .grocery-dept-header { display:flex; align-items:center; justify-content:space-between; padding:10px 0 6px; margin-top:6px; border-bottom:1px solid var(--border); }
+  .grocery-dept-label { font-family:var(--mono); font-size:11px; letter-spacing:1.5px; text-transform:uppercase; color:var(--accent); font-weight:700; display:flex; align-items:center; gap:6px; }
+  .grocery-dept-count { font-size:11px; color:var(--muted); font-family:var(--mono); }
+  .grocery-item { display:flex; align-items:center; gap:12px; padding:11px 0; border-bottom:1px solid rgba(46,51,80,0.35); }
+  .grocery-item.checked { opacity:0.45; }
+  .grocery-item.checked .grocery-item-name { text-decoration:line-through; color:var(--muted); }
+  .grocery-cb { width:22px; height:22px; min-width:22px; border-radius:6px; border:2px solid var(--border); background:transparent; cursor:pointer; display:flex; align-items:center; justify-content:center; transition:all 0.15s; -webkit-appearance:none; appearance:none; }
+  .grocery-cb:checked { background:var(--ok); border-color:var(--ok); }
+  .grocery-cb:checked::after { content:'✓'; color:#111; font-size:13px; font-weight:700; display:block; line-height:1; }
+  .grocery-item-info { flex:1; min-width:0; }
+  .grocery-item-name { font-size:14px; font-weight:600; }
+  .grocery-item-meta { font-size:11px; color:var(--muted); margin-top:2px; }
+  .grocery-item-actions { display:flex; gap:4px; }
+  .grocery-icon-btn { background:transparent; border:none; color:var(--muted); font-size:16px; cursor:pointer; padding:4px; border-radius:4px; line-height:1; }
+  .grocery-icon-btn:hover { color:var(--text); }
+  .grocery-empty { text-align:center; padding:60px 20px; color:var(--muted); }
+  .grocery-empty-icon { font-size:48px; margin-bottom:12px; }
+  .grocery-add-row { display:flex; gap:8px; align-items:center; margin-bottom:16px; }
+  .grocery-add-input { flex:1; background:var(--surface2); border:1px solid var(--border); border-radius:8px; padding:9px 14px; color:var(--text); font-family:var(--sans); font-size:14px; outline:none; }
+  .grocery-add-input:focus { border-color:var(--accent); }
+  .grocery-checked-bar { display:flex; align-items:center; justify-content:space-between; padding:8px 0; margin-top:8px; border-top:1px solid var(--border); }
+  .grocery-dept-group { margin-bottom:4px; }
+  .grocery-context-menu { position:fixed; background:var(--surface); border:1px solid var(--border); border-radius:10px; box-shadow:0 8px 30px rgba(0,0,0,0.4); z-index:500; min-width:180px; overflow:hidden; }
+  .grocery-context-item { display:block; width:100%; padding:13px 16px; background:transparent; border:none; color:var(--text); font-family:var(--sans); font-size:14px; text-align:left; cursor:pointer; }
+  .grocery-context-item:hover { background:var(--surface2); }
+  .grocery-context-item.danger { color:var(--danger); }
+  .grocery-interval-info { font-size:12px; color:var(--muted); margin-bottom:16px; }
+  .dept-manage-row { display:flex; align-items:center; gap:8px; padding:10px 0; border-bottom:1px solid rgba(46,51,80,0.4); }
+  .dept-manage-emoji { font-size:20px; width:28px; text-align:center; flex-shrink:0; }
+  .dept-manage-name { flex:1; font-size:14px; }
+  .dept-manage-actions { display:flex; gap:4px; }
 </style>
 </head>
 <body>
@@ -659,6 +719,7 @@
     <button class="tab" onclick="showView('shopping',this)">🛍️ Shopping List</button>
     <button class="tab" onclick="showView('reminders',this)">🔔 Reminders</button>
     <button class="tab" onclick="showView('savings',this)">💰 Savings</button>
+    <button class="tab" onclick="showView('grocery',this)">🛒 Grocery</button>
     <button class="tab" onclick="showView('settings',this)">⚙️ Settings</button>
   </div>
 
@@ -1047,11 +1108,143 @@
       <p style="font-size:13px;color:var(--muted);line-height:1.8">
         <strong style="color:var(--text)">STOCKROOM</strong> — Household Consumables Tracker.<br>
         Stock estimates are calculated from your purchase history, quantity per purchase, and months-of-supply settings.<br>
-        Data syncs to your Google Drive or Dropbox account. Export regularly as an additional backup.
+        Data syncs to your Google Drive account. Export regularly as an additional backup.
       </p>
     </div>
   </div>
 </div>
+
+<!-- ═══ GROCERY VIEW ═══ -->
+<div class="view" id="view-grocery">
+  <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:16px;flex-wrap:wrap;gap:10px">
+    <div>
+      <h2 style="font-family:var(--mono);font-size:16px;letter-spacing:2px;color:var(--accent)">🛒 GROCERY LIST</h2>
+      <div id="grocery-subtitle" style="font-size:12px;color:var(--muted);font-family:var(--mono);margin-top:3px"></div>
+    </div>
+    <div style="display:flex;gap:8px;flex-wrap:wrap">
+      <button class="btn btn-ghost btn-sm" onclick="openGroceryDepts()" title="Manage departments">🏷️ Departments</button>
+      <button class="btn btn-primary btn-sm" onclick="openAddGroceryItem()">+ Add Item</button>
+    </div>
+  </div>
+
+  <!-- toolbar: search + sort -->
+  <div class="grocery-toolbar">
+    <input class="grocery-search" id="grocery-search" type="search" placeholder="Search items…" oninput="renderGrocery()" autocomplete="off">
+    <div class="grocery-sort-toggle">
+      <button class="grocery-sort-btn active" id="grocery-sort-dept" onclick="setGrocerySort('dept',this)">By Dept</button>
+      <button class="grocery-sort-btn" id="grocery-sort-alpha" onclick="setGrocerySort('alpha',this)">A–Z</button>
+    </div>
+  </div>
+
+  <!-- interval info -->
+  <div class="grocery-interval-info" id="grocery-interval-info"></div>
+
+  <!-- list -->
+  <div id="grocery-list-body"></div>
+
+  <!-- checked items footer -->
+  <div id="grocery-checked-bar" style="display:none" class="grocery-checked-bar">
+    <span id="grocery-checked-count" style="font-size:13px;color:var(--muted)"></span>
+    <button class="btn btn-ghost btn-sm" onclick="clearCheckedGrocery()">Clear checked</button>
+  </div>
+</div>
+
+<!-- ═══ GROCERY ADD/EDIT MODAL ═══ -->
+<div class="modal-backdrop" id="grocery-item-modal" style="z-index:300">
+  <div class="modal" style="max-width:440px">
+    <h2 id="grocery-modal-title">Add Grocery Item</h2>
+    <input type="hidden" id="grocery-edit-id">
+
+    <div class="form-group">
+      <label class="form-label">Item name</label>
+      <input class="form-input" id="grocery-f-name" type="text" placeholder="e.g. Semi-skimmed milk" autocomplete="off">
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Department</label>
+      <select class="form-input" id="grocery-f-dept"></select>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Notes <span style="color:var(--muted);font-weight:400">(optional)</span></label>
+      <input class="form-input" id="grocery-f-notes" type="text" placeholder="Brand, size, any details…" autocomplete="off">
+    </div>
+
+    <div class="form-group">
+      <label class="form-label" style="display:flex;align-items:center;gap:8px">
+        <input type="checkbox" id="grocery-f-recurring" onchange="toggleGroceryRecurring()" style="width:16px;height:16px">
+        Repeating item (auto-reappears after shopping)
+      </label>
+    </div>
+
+    <div id="grocery-recurring-opts" style="display:none;margin-top:4px;padding:12px;background:var(--surface2);border-radius:8px;border:1px solid var(--border)">
+      <label class="form-label">Re-add every</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input class="form-input" id="grocery-f-interval" type="number" min="1" max="365" value="7" style="width:80px">
+        <select class="form-input" id="grocery-f-interval-unit" style="flex:1">
+          <option value="1">days</option>
+          <option value="7">weeks</option>
+          <option value="30">months</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('grocery-item-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveGroceryItem()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ GROCERY DEPARTMENTS MODAL ═══ -->
+<div class="modal-backdrop" id="grocery-depts-modal" style="z-index:300">
+  <div class="modal" style="max-width:420px">
+    <h2>🏷️ Departments</h2>
+    <p class="subtitle">Organise your grocery list. Drag to reorder (coming soon).</p>
+
+    <div id="grocery-depts-list" style="margin-bottom:16px"></div>
+
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px">
+      <input class="form-input" id="grocery-new-dept-emoji" type="text" placeholder="🧴" maxlength="4" style="width:60px;text-align:center">
+      <input class="form-input" id="grocery-new-dept-name" type="text" placeholder="New department name…" style="flex:1" autocomplete="off">
+      <button class="btn btn-primary btn-sm" onclick="addGroceryDept()">Add</button>
+    </div>
+
+    <div style="margin-bottom:16px;padding:12px;background:var(--surface2);border-radius:8px;border:1px solid var(--border)">
+      <label class="form-label">My shop interval</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <span style="font-size:13px;color:var(--muted)">I shop every</span>
+        <input class="form-input" id="grocery-shop-interval" type="number" min="1" max="60" value="7" style="width:70px">
+        <select class="form-input" id="grocery-shop-interval-unit" style="flex:1">
+          <option value="1">days</option>
+          <option value="7">weeks</option>
+          <option value="30">months</option>
+        </select>
+      </div>
+      <button class="btn btn-ghost btn-sm" style="margin-top:10px" onclick="saveGroceryShopInterval()">Save interval</button>
+    </div>
+
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('grocery-depts-modal')">Done</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ GROCERY CONVERT TO STOCK MODAL ═══ -->
+<div class="modal-backdrop" id="grocery-convert-modal" style="z-index:310">
+  <div class="modal" style="max-width:420px">
+    <h2>📦 Add to Stockroom</h2>
+    <p class="subtitle">Convert this grocery item into a tracked stock item.</p>
+    <div id="grocery-convert-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('grocery-convert-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="doConvertToStock()">Add to Stock</button>
+    </div>
+  </div>
+</div>
+
+<!-- context menu (shared) -->
+<div id="grocery-context-menu" class="grocery-context-menu" style="display:none"></div>
 
 <!-- ═══ TEMPLATES MODAL ═══ -->
 <div class="modal-backdrop" id="templates-modal" style="z-index:300">
@@ -5941,6 +6134,7 @@ function showView(name, btn) {
   if (name === 'reminders') renderReminders();
   if (name === 'shopping') renderShoppingList();
   if (name === 'savings')  renderSavingsView();
+  if (name === 'grocery')  renderGrocery();
 }
 
 function getShoppingItems() {
@@ -7096,6 +7290,547 @@ function updateSyncPill(state, provider) {
 }
 
 
+// ═══════════════════════════════════════════════════════════
+//  ADAPTIVE DARK MODE 2.0 — Time-of-day colour temperature
+// ═══════════════════════════════════════════════════════════
+
+function applyAdaptiveColourTemp() {
+  const h = new Date().getHours();
+  let tint = 'rgba(0,0,0,0)';
+  let surfaceOpacity = '0.82';
+
+  if (h >= 22 || h < 6) {
+    // Late night / early morning: warm amber tint, more opaque surfaces
+    tint = 'rgba(60,25,0,0.08)';
+    surfaceOpacity = '0.92';
+    document.documentElement.style.setProperty('--ok',    '#3db87a');
+    document.documentElement.style.setProperty('--accent2','#4f82e0');
+  } else if (h >= 6 && h < 10) {
+    // Morning: cool blue-white, crisp
+    tint = 'rgba(10,20,60,0.04)';
+    surfaceOpacity = '0.78';
+    document.documentElement.style.setProperty('--ok',    '#4cbb8a');
+    document.documentElement.style.setProperty('--accent2','#5b8dee');
+  } else if (h >= 18 && h < 22) {
+    // Evening: subtle warm shift
+    tint = 'rgba(40,15,0,0.05)';
+    surfaceOpacity = '0.86';
+    document.documentElement.style.setProperty('--ok',    '#45b882');
+    document.documentElement.style.setProperty('--accent2','#547ee8');
+  } else {
+    // Daytime: neutral
+    tint = 'rgba(0,0,0,0)';
+    surfaceOpacity = '0.82';
+    document.documentElement.style.setProperty('--ok',    '#4cbb8a');
+    document.documentElement.style.setProperty('--accent2','#5b8dee');
+  }
+
+  document.documentElement.style.setProperty('--temp-tint', tint);
+  document.documentElement.style.setProperty('--surface-opacity', surfaceOpacity);
+}
+
+applyAdaptiveColourTemp();
+// Re-check every 10 minutes in case the app stays open across hour boundaries
+setInterval(applyAdaptiveColourTemp, 600000);
+
+
+// ═══════════════════════════════════════════════════════════
+//  PREDICTIVE MICRO-INTERACTIONS
+// ═══════════════════════════════════════════════════════════
+
+// Pre-warm renders on pointerdown (fires ~80ms before click on mobile)
+// and on hover (desktop). Gives the UI a "telepathic" feel.
+
+let _groceryPrewarmed = false;
+let _reportPrewarmed  = false;
+
+function prewarmView(name) {
+  if (name === 'grocery' && !_groceryPrewarmed) {
+    _groceryPrewarmed = true;
+    // Pre-load grocery data into memory so render is instant on click
+    loadGrocery();
+  }
+  if (name === 'report' && !_reportPrewarmed) {
+    _reportPrewarmed = true;
+    // Pre-calculate report data off the critical path
+    requestIdleCallback ? requestIdleCallback(() => renderReport()) : setTimeout(() => renderReport(), 0);
+  }
+}
+
+// Patch tab buttons with pointerdown + pointerenter pre-warming
+document.addEventListener('DOMContentLoaded', () => {
+  document.querySelectorAll('.tab').forEach(btn => {
+    const onclick = btn.getAttribute('onclick') || '';
+    const match   = onclick.match(/showView\('(\w+)'/);
+    if (!match) return;
+    const viewName = match[1];
+    const prewarm  = () => prewarmView(viewName);
+    btn.addEventListener('pointerenter', prewarm, {passive:true});
+    btn.addEventListener('pointerdown',  prewarm, {passive:true});
+  });
+});
+
+// Predictive button ripple — gives physical depth feedback on tap
+document.addEventListener('pointerdown', (e) => {
+  const btn = e.target.closest('.btn, .tab, .filter-chip, .grocery-cb');
+  if (!btn || btn.classList.contains('no-ripple')) return;
+
+  const ripple = document.createElement('span');
+  const rect   = btn.getBoundingClientRect();
+  const size   = Math.max(rect.width, rect.height) * 2;
+  const x      = e.clientX - rect.left - size / 2;
+  const y      = e.clientY - rect.top  - size / 2;
+
+  ripple.style.cssText = `
+    position:absolute;width:${size}px;height:${size}px;
+    left:${x}px;top:${y}px;border-radius:50%;
+    background:rgba(255,255,255,0.12);pointer-events:none;
+    transform:scale(0);animation:ripple-expand 0.45s ease-out forwards;
+    z-index:0;
+  `;
+
+  // Ensure the button has relative positioning for ripple containment
+  const pos = getComputedStyle(btn).position;
+  if (pos === 'static') btn.style.position = 'relative';
+  btn.style.overflow = 'hidden';
+  btn.appendChild(ripple);
+  setTimeout(() => ripple.remove(), 500);
+}, {passive:true});
+
+
+// ═══════════════════════════════════════════════════════════
+//  GROCERY LIST
+// ═══════════════════════════════════════════════════════════
+
+const DEFAULT_DEPTS = [
+  { id:'bakery',    name:'Bakery',       emoji:'🍞' },
+  { id:'fruit-veg', name:'Fruit & Veg',  emoji:'🥦' },
+  { id:'meat-fish', name:'Meat & Fish',  emoji:'🥩' },
+  { id:'dairy',     name:'Dairy',        emoji:'🧀' },
+  { id:'frozen',    name:'Frozen',       emoji:'🧊' },
+  { id:'drinks',    name:'Drinks',       emoji:'🥤' },
+  { id:'snacks',    name:'Snacks',       emoji:'🍿' },
+  { id:'household', name:'Household',    emoji:'🧹' },
+  { id:'baby-care', name:'Baby Care',    emoji:'🍼' },
+  { id:'other',     name:'Other',        emoji:'📦' },
+];
+
+let groceryItems = [];
+let groceryDepts = [];
+let grocerySort  = 'dept'; // 'dept' | 'alpha'
+let groceryContextTarget = null;
+let groceryConvertItem   = null;
+
+function loadGrocery() {
+  try { groceryItems = JSON.parse(localStorage.getItem('stockroom_groceries') || '[]'); } catch(e) { groceryItems = []; }
+  try { groceryDepts = JSON.parse(localStorage.getItem('stockroom_departments') || 'null'); } catch(e) { groceryDepts = null; }
+  if (!groceryDepts || groceryDepts.length === 0) { groceryDepts = DEFAULT_DEPTS.map(d => ({...d})); }
+}
+
+function saveGrocery() {
+  try { localStorage.setItem('stockroom_groceries', JSON.stringify(groceryItems)); } catch(e) {}
+}
+
+function saveGroceryDepts() {
+  try { localStorage.setItem('stockroom_departments', JSON.stringify(groceryDepts)); } catch(e) {}
+}
+
+function getGroceryShopInterval() {
+  try { return JSON.parse(localStorage.getItem('stockroom_grocery_interval') || '{"value":7,"unit":1}'); } catch(e) { return {value:7,unit:1}; }
+}
+
+function saveGroceryShopInterval() {
+  const v = parseInt(document.getElementById('grocery-shop-interval').value) || 7;
+  const u = parseInt(document.getElementById('grocery-shop-interval-unit').value) || 1;
+  try { localStorage.setItem('stockroom_grocery_interval', JSON.stringify({value:v,unit:u})); } catch(e) {}
+  showToast('Shop interval saved');
+}
+
+function setGrocerySort(mode, btn) {
+  grocerySort = mode;
+  document.querySelectorAll('.grocery-sort-btn').forEach(b => b.classList.remove('active'));
+  btn.classList.add('active');
+  renderGrocery();
+}
+
+function renderGrocery() {
+  const query = (document.getElementById('grocery-search')?.value || '').toLowerCase().trim();
+  const body  = document.getElementById('grocery-list-body');
+  const infoEl = document.getElementById('grocery-interval-info');
+  const checkedBar = document.getElementById('grocery-checked-bar');
+  if (!body) return;
+
+  // interval info
+  const si = getGroceryShopInterval();
+  const unitLabel = si.unit === 7 ? (si.value === 1 ? 'week' : 'weeks') : si.unit === 30 ? (si.value === 1 ? 'month' : 'months') : (si.value === 1 ? 'day' : 'days');
+  if (infoEl) infoEl.textContent = `Shopping every ${si.value} ${unitLabel} · ${groceryItems.filter(i=>!i.checked).length} item${groceryItems.filter(i=>!i.checked).length===1?'':'s'} remaining`;
+
+  // subtitle
+  const sub = document.getElementById('grocery-subtitle');
+  if (sub) sub.textContent = `${groceryItems.length} item${groceryItems.length===1?'':'s'} · tap to check off`;
+
+  let filtered = groceryItems.filter(i => !query || i.name.toLowerCase().includes(query) || (i.notes||'').toLowerCase().includes(query));
+  const unchecked = filtered.filter(i => !i.checked);
+  const checked   = filtered.filter(i =>  i.checked);
+
+  const checkedCount = groceryItems.filter(i => i.checked).length;
+  if (checkedBar) {
+    checkedBar.style.display = checkedCount > 0 ? 'flex' : 'none';
+    const cc = document.getElementById('grocery-checked-count');
+    if (cc) cc.textContent = `${checkedCount} item${checkedCount===1?'':'s'} checked`;
+  }
+
+  if (groceryItems.length === 0) {
+    body.innerHTML = `<div class="grocery-empty"><div class="grocery-empty-icon">🛒</div><div style="font-size:16px;font-weight:700;margin-bottom:8px">No grocery items yet</div><div style="font-size:13px;color:var(--muted)">Add items manually or convert existing stock items.</div></div>`;
+    return;
+  }
+
+  if (filtered.length === 0) {
+    body.innerHTML = `<div class="grocery-empty"><div class="grocery-empty-icon">🔍</div><div style="font-size:15px;font-weight:600">No matches</div></div>`;
+    return;
+  }
+
+  let html = '';
+
+  if (grocerySort === 'dept') {
+    // Group unchecked by dept
+    const deptMap = {};
+    unchecked.forEach(item => {
+      const dept = item.department || 'other';
+      if (!deptMap[dept]) deptMap[dept] = [];
+      deptMap[dept].push(item);
+    });
+
+    const deptOrder = groceryDepts.map(d => d.id);
+    // also catch any items with unknown dept ids
+    const extraDepts = [...new Set(unchecked.map(i => i.department || 'other'))].filter(d => !deptOrder.includes(d));
+    const orderedDepts = [...deptOrder, ...extraDepts];
+
+    orderedDepts.forEach(deptId => {
+      const deptItems = deptMap[deptId];
+      if (!deptItems || deptItems.length === 0) return;
+      const deptDef = groceryDepts.find(d => d.id === deptId) || {name: deptId, emoji:'📦'};
+      html += `<div class="grocery-dept-group">
+        <div class="grocery-dept-header">
+          <span class="grocery-dept-label">${deptDef.emoji} ${esc(deptDef.name)}</span>
+          <span class="grocery-dept-count">${deptItems.length}</span>
+        </div>
+        ${deptItems.map(item => groceryItemHTML(item)).join('')}
+      </div>`;
+    });
+  } else {
+    // Alphabetical unchecked
+    const sorted = [...unchecked].sort((a,b) => a.name.localeCompare(b.name));
+    html += sorted.map(item => groceryItemHTML(item)).join('');
+  }
+
+  // checked items (always at bottom, no grouping)
+  if (checked.length > 0) {
+    html += `<div style="margin-top:16px">
+      <div class="grocery-dept-header">
+        <span class="grocery-dept-label" style="color:var(--muted)">✓ Checked</span>
+        <span class="grocery-dept-count">${checked.length}</span>
+      </div>
+      ${checked.map(item => groceryItemHTML(item)).join('')}
+    </div>`;
+  }
+
+  body.innerHTML = html;
+}
+
+function groceryItemHTML(item) {
+  const deptDef = groceryDepts.find(d => d.id === (item.department || 'other')) || {name:'Other', emoji:'📦'};
+  const meta = [
+    grocerySort === 'alpha' ? `${deptDef.emoji} ${deptDef.name}` : null,
+    item.notes || null,
+    item.recurring ? `↻ every ${item.intervalDays||7}d` : null,
+  ].filter(Boolean).join(' · ');
+
+  return `<div class="grocery-item${item.checked?' checked':''}" id="gitem-${item.id}">
+    <input type="checkbox" class="grocery-cb" ${item.checked?'checked':''} onchange="toggleGroceryCheck('${item.id}',this)">
+    <div class="grocery-item-info">
+      <div class="grocery-item-name">${esc(item.name)}</div>
+      ${meta ? `<div class="grocery-item-meta">${esc(meta)}</div>` : ''}
+    </div>
+    <div class="grocery-item-actions">
+      <button class="grocery-icon-btn" onclick="openGroceryContext(event,'${item.id}')" title="Options">•••</button>
+    </div>
+  </div>`;
+}
+
+function toggleGroceryCheck(id, cb) {
+  const item = groceryItems.find(i => i.id === id);
+  if (!item) return;
+  item.checked = cb.checked;
+  item.checkedAt = cb.checked ? new Date().toISOString() : null;
+  saveGrocery();
+  renderGrocery();
+}
+
+function clearCheckedGrocery() {
+  // For recurring items: reset check and bump addedAt; for non-recurring: remove
+  groceryItems = groceryItems.filter(item => {
+    if (!item.checked) return true;
+    if (item.recurring) {
+      item.checked   = false;
+      item.checkedAt = null;
+      item.addedAt   = new Date().toISOString();
+      return true;
+    }
+    return false;
+  });
+  saveGrocery();
+  renderGrocery();
+}
+
+// ── Add / Edit ────────────────────────────────────────────
+
+function openAddGroceryItem(prefillName) {
+  document.getElementById('grocery-modal-title').textContent = 'Add Grocery Item';
+  document.getElementById('grocery-edit-id').value = '';
+  document.getElementById('grocery-f-name').value  = prefillName || '';
+  document.getElementById('grocery-f-notes').value = '';
+  document.getElementById('grocery-f-recurring').checked = false;
+  document.getElementById('grocery-f-interval').value = '7';
+  document.getElementById('grocery-f-interval-unit').value = '1';
+  document.getElementById('grocery-recurring-opts').style.display = 'none';
+  populateGroceryDeptSelect('');
+  openModal('grocery-item-modal');
+  setTimeout(() => document.getElementById('grocery-f-name').focus(), 100);
+}
+
+function openEditGroceryItem(id) {
+  const item = groceryItems.find(i => i.id === id);
+  if (!item) return;
+  document.getElementById('grocery-modal-title').textContent = 'Edit Item';
+  document.getElementById('grocery-edit-id').value = id;
+  document.getElementById('grocery-f-name').value  = item.name;
+  document.getElementById('grocery-f-notes').value = item.notes || '';
+  document.getElementById('grocery-f-recurring').checked = !!item.recurring;
+  const days = item.intervalDays || 7;
+  // pick best unit
+  if (days % 30 === 0 && days >= 30) {
+    document.getElementById('grocery-f-interval').value = days / 30;
+    document.getElementById('grocery-f-interval-unit').value = '30';
+  } else if (days % 7 === 0) {
+    document.getElementById('grocery-f-interval').value = days / 7;
+    document.getElementById('grocery-f-interval-unit').value = '7';
+  } else {
+    document.getElementById('grocery-f-interval').value = days;
+    document.getElementById('grocery-f-interval-unit').value = '1';
+  }
+  document.getElementById('grocery-recurring-opts').style.display = item.recurring ? 'block' : 'none';
+  populateGroceryDeptSelect(item.department || 'other');
+  openModal('grocery-item-modal');
+}
+
+function populateGroceryDeptSelect(selectedId) {
+  const sel = document.getElementById('grocery-f-dept');
+  sel.innerHTML = groceryDepts.map(d =>
+    `<option value="${d.id}" ${d.id === selectedId ? 'selected' : ''}>${d.emoji} ${d.name}</option>`
+  ).join('');
+}
+
+function toggleGroceryRecurring() {
+  const checked = document.getElementById('grocery-f-recurring').checked;
+  document.getElementById('grocery-recurring-opts').style.display = checked ? 'block' : 'none';
+}
+
+function saveGroceryItem() {
+  const name = document.getElementById('grocery-f-name').value.trim();
+  if (!name) { showToast('Please enter an item name'); return; }
+  const id        = document.getElementById('grocery-edit-id').value;
+  const dept      = document.getElementById('grocery-f-dept').value;
+  const notes     = document.getElementById('grocery-f-notes').value.trim();
+  const recurring = document.getElementById('grocery-f-recurring').checked;
+  const intervalVal  = parseInt(document.getElementById('grocery-f-interval').value) || 7;
+  const intervalUnit = parseInt(document.getElementById('grocery-f-interval-unit').value) || 1;
+  const intervalDays = intervalVal * intervalUnit;
+
+  if (id) {
+    const item = groceryItems.find(i => i.id === id);
+    if (item) { Object.assign(item, {name, department:dept, notes, recurring, intervalDays, updatedAt:new Date().toISOString()}); }
+  } else {
+    groceryItems.push({ id: 'g_'+Date.now()+'_'+Math.random().toString(36).slice(2,6), name, department:dept, notes, recurring, intervalDays, checked:false, addedAt:new Date().toISOString(), updatedAt:new Date().toISOString() });
+  }
+  saveGrocery();
+  closeModal('grocery-item-modal');
+  renderGrocery();
+}
+
+// ── Context menu ─────────────────────────────────────────
+
+function openGroceryContext(e, id) {
+  e.stopPropagation();
+  groceryContextTarget = id;
+  const item = groceryItems.find(i => i.id === id);
+  if (!item) return;
+  const menu = document.getElementById('grocery-context-menu');
+  menu.innerHTML = `
+    <button class="grocery-context-item" onclick="editFromContext()">✏️ Edit item</button>
+    <button class="grocery-context-item" onclick="convertFromContext()">📦 Convert to stock item</button>
+    <button class="grocery-context-item danger" onclick="deleteFromContext()">🗑 Delete</button>
+  `;
+  // Position near tap
+  const rect = e.currentTarget.getBoundingClientRect();
+  menu.style.display = 'block';
+  const menuW = 190, menuH = 140;
+  let left = rect.left - menuW + rect.width;
+  let top  = rect.bottom + 6;
+  if (left < 8) left = 8;
+  if (top + menuH > window.innerHeight) top = rect.top - menuH - 6;
+  menu.style.left = left + 'px';
+  menu.style.top  = top  + 'px';
+
+  setTimeout(() => document.addEventListener('click', dismissGroceryContext, {once:true}), 10);
+}
+
+function dismissGroceryContext() {
+  document.getElementById('grocery-context-menu').style.display = 'none';
+  groceryContextTarget = null;
+}
+
+function editFromContext() {
+  const id = groceryContextTarget;
+  dismissGroceryContext();
+  if (id) openEditGroceryItem(id);
+}
+
+function deleteFromContext() {
+  const id = groceryContextTarget;
+  dismissGroceryContext();
+  if (!id) return;
+  groceryItems = groceryItems.filter(i => i.id !== id);
+  saveGrocery();
+  renderGrocery();
+}
+
+function convertFromContext() {
+  const id = groceryContextTarget;
+  dismissGroceryContext();
+  if (!id) return;
+  const item = groceryItems.find(i => i.id === id);
+  if (!item) return;
+  groceryConvertItem = item;
+  const body = document.getElementById('grocery-convert-body');
+  const deptDef = groceryDepts.find(d => d.id === (item.department||'other')) || {name:'Other',emoji:'📦'};
+  body.innerHTML = `
+    <div style="background:var(--surface2);border-radius:8px;padding:14px;margin-bottom:16px;border:1px solid var(--border)">
+      <div style="font-size:15px;font-weight:700;margin-bottom:4px">${esc(item.name)}</div>
+      <div style="font-size:12px;color:var(--muted)">${deptDef.emoji} ${esc(deptDef.name)}${item.notes?' · '+esc(item.notes):''}</div>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Category in Stockroom</label>
+      <select class="form-input" id="convert-category">
+        <option>Food &amp; Drink</option><option>Kitchen</option><option>Bathroom</option>
+        <option>Cleaning</option><option>Health</option><option>Garden</option><option>Other</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <label class="form-label">Months of supply per purchase</label>
+      <input class="form-input" id="convert-months" type="number" min="0.25" max="24" step="0.25" value="1">
+    </div>
+    <p style="font-size:12px;color:var(--muted);margin-top:4px">You can finish setting it up in the stock item form.</p>
+  `;
+  openModal('grocery-convert-modal');
+}
+
+function doConvertToStock() {
+  if (!groceryConvertItem) return;
+  const category = document.getElementById('convert-category').value;
+  const months   = parseFloat(document.getElementById('convert-months').value) || 1;
+  closeModal('grocery-convert-modal');
+  // Pre-fill the main item modal
+  openItemModal();
+  setTimeout(() => {
+    const nameEl = document.getElementById('f-name');
+    const catEl  = document.getElementById('f-category');
+    const monEl  = document.getElementById('f-months');
+    if (nameEl) nameEl.value = groceryConvertItem.name;
+    if (catEl)  catEl.value  = category;
+    if (monEl)  monEl.value  = months;
+    // Switch to the stock tab
+    const stockTab = [...document.querySelectorAll('.tab')].find(t => t.textContent.includes('Stock'));
+    if (stockTab) showView('stock', stockTab);
+  }, 150);
+  groceryConvertItem = null;
+}
+
+// ── Departments modal ──────────────────────────────────────
+
+function openGroceryDepts() {
+  renderGroceryDeptsModal();
+  // populate shop interval
+  const si = getGroceryShopInterval();
+  document.getElementById('grocery-shop-interval').value = si.value;
+  document.getElementById('grocery-shop-interval-unit').value = si.unit;
+  openModal('grocery-depts-modal');
+}
+
+function renderGroceryDeptsModal() {
+  const list = document.getElementById('grocery-depts-list');
+  list.innerHTML = groceryDepts.map((d, idx) => `
+    <div class="dept-manage-row">
+      <span class="dept-manage-emoji">${d.emoji}</span>
+      <span class="dept-manage-name">${esc(d.name)}</span>
+      <div class="dept-manage-actions">
+        ${idx > 0 ? `<button class="grocery-icon-btn" onclick="moveGroceryDept(${idx},-1)" title="Move up">↑</button>` : ''}
+        ${idx < groceryDepts.length-1 ? `<button class="grocery-icon-btn" onclick="moveGroceryDept(${idx},1)" title="Move down">↓</button>` : ''}
+        <button class="grocery-icon-btn" style="color:var(--danger)" onclick="deleteGroceryDept('${d.id}')" title="Delete">✕</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function moveGroceryDept(idx, dir) {
+  const newIdx = idx + dir;
+  if (newIdx < 0 || newIdx >= groceryDepts.length) return;
+  [groceryDepts[idx], groceryDepts[newIdx]] = [groceryDepts[newIdx], groceryDepts[idx]];
+  saveGroceryDepts();
+  renderGroceryDeptsModal();
+}
+
+function deleteGroceryDept(id) {
+  const inUse = groceryItems.some(i => i.department === id);
+  if (inUse && !confirm('Items use this department. They\'ll move to Other. Continue?')) return;
+  if (inUse) groceryItems.forEach(i => { if (i.department === id) i.department = 'other'; });
+  groceryDepts = groceryDepts.filter(d => d.id !== id);
+  saveGroceryDepts();
+  saveGrocery();
+  renderGroceryDeptsModal();
+}
+
+function addGroceryDept() {
+  const nameInput  = document.getElementById('grocery-new-dept-name');
+  const emojiInput = document.getElementById('grocery-new-dept-emoji');
+  const name  = nameInput.value.trim();
+  const emoji = emojiInput.value.trim() || '📦';
+  if (!name) { showToast('Please enter a department name'); return; }
+  const id = 'dept_' + Date.now();
+  groceryDepts.push({id, name, emoji});
+  saveGroceryDepts();
+  nameInput.value  = '';
+  emojiInput.value = '';
+  renderGroceryDeptsModal();
+  showToast('Department added');
+}
+
+// ── Auto-restore recurring items ───────────────────────────
+function checkGroceryRecurring() {
+  const now = Date.now();
+  let changed = false;
+  groceryItems.forEach(item => {
+    if (!item.recurring || !item.checked || !item.checkedAt) return;
+    const intervalMs = (item.intervalDays || 7) * 86400000;
+    if (now - new Date(item.checkedAt).getTime() >= intervalMs) {
+      item.checked   = false;
+      item.checkedAt = null;
+      changed = true;
+    }
+  });
+  if (changed) { saveGrocery(); renderGrocery(); }
+}
+
 function init() {
   loadData();
 
@@ -7176,6 +7911,8 @@ function init() {
   setTimeout(checkScheduledEmail, 2000);
   setTimeout(checkLowStockNotifications, 3000);
   setTimeout(checkReminderNotifications, 3500);
+  loadGrocery();
+  checkGroceryRecurring();
 }
 
 init();
