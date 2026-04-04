@@ -2390,9 +2390,9 @@ function updateLastSentUI() {
           : minsUntil < 1440
             ? `in ${Math.ceil(minsUntil/60)} hour${Math.ceil(minsUntil/60) !== 1 ? 's' : ''}`
             : `on ${fmtDate(startDate)} at ${startTime}`;
-        textEl.textContent = `☁️ First reminder scheduled ${timeStr} — Cloudflare will send automatically`;
+        textEl.textContent = `☁️ First reminder scheduled ${timeStr} — Deno will send automatically`;
       } else {
-        textEl.textContent = `⏳ First reminder is due — Cloudflare cron will send on next hourly check`;
+        textEl.textContent = `⏳ First reminder is due — Deno cron will send on next hourly check`;
       }
     } else {
       textEl.textContent = 'Set a start date above to schedule automatic reminders';
@@ -2404,7 +2404,7 @@ function updateLastSentUI() {
   const daysUntil = Math.ceil((next - now) / 86400000);
   textEl.textContent = `Last sent ${fmtDate(lastSent)} · Next ${daysUntil > 0
     ? `in ${daysUntil} day${daysUntil !== 1 ? 's' : ''}`
-    : 'is overdue — Cloudflare will send on next hourly check'}`;
+    : 'is overdue — Deno will send on next hourly check'}`;
 }
 
 function resetLastSent() {
@@ -2461,17 +2461,9 @@ function handleUnsubscribe() {
 }
 
 function checkScheduledEmail() {
-  const interval = settings.emailInterval ?? 30;
-  if (!settings.email || interval === 0 || !settings.emailStartDate) return;
-  const now      = new Date();
-  const lastSent = settings.emailLastSent;
-  const start    = new Date(`${settings.emailStartDate}T${settings.emailStartTime || '09:00'}:00`);
-  if (!lastSent) {
-    if (now >= start) sendReminderEmail(false);
-    return;
-  }
-  const daysSince = (now - new Date(lastSent)) / 86400000;
-  if (daysSince >= interval) sendReminderEmail(false);
+  // Client-side: just update the UI — the Deno cron is the single source of truth for sending.
+  // Removed client-side send trigger to prevent double-sends if app opens after scheduled time.
+  updateLastSentUI();
 }
 
 async function sendReminderEmail(manual = true) {
