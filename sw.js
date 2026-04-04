@@ -1,6 +1,6 @@
 // ── INCREMENT THIS VERSION NUMBER EVERY TIME YOU DEPLOY ──────
 // The browser detects a change in this file and triggers the update flow
-const CACHE_VERSION = 'stockroom-v2';
+const CACHE_VERSION = 'stockroom-v3';
 const CACHE_NAME    = CACHE_VERSION;
 
 const CACHE_URLS = [
@@ -54,6 +54,7 @@ self.addEventListener('fetch', event => {
     url.hostname.includes('dropboxapi.com')    ||
     url.hostname.includes('dropbox.com')       ||
     url.hostname.includes('workers.dev')       ||
+    url.hostname.includes('deno.net')          ||
     url.hostname.includes('resend.com')        ||
     url.hostname.includes('openfoodfacts.org') ||
     url.hostname.includes('openbeautyfacts.org')
@@ -80,18 +81,56 @@ self.addEventListener('fetch', event => {
   );
 });
 
-// ── Notification click: focus or open app ────────────────────
+// ── Notification click: handle Replaced action or open app ───
 self.addEventListener('notificationclick', event => {
   event.notification.close();
-  const targetUrl = event.notification.data?.url || './';
+
+  const data       = event.notification.data || {};
+  const action     = event.action;
+  const reminderId = data.reminderId;
+  const token      = data.token;
+  const workerUrl  = data.workerUrl;
+  const appUrl     = data.url || './';
+
+  if (action === 'replaced' && reminderId && token && workerUrl) {
+    // Mark as replaced directly from the notification — no app visit needed
+    event.waitUntil(
+      fetch(`${workerUrl}/reminder-done?id=${encodeURIComponent(reminderId)}&token=${encodeURIComponent(token)}&name=${encodeURIComponent(data.reminderName || '')}&source=push`)
+        .then(res => res.json())
+        .then(result => {
+          const date = result.date || new Date().toISOString().slice(0, 10);
+          // Post message to any open app windows so they can update locally
+          return clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {
+            clientList.forEach(client => {
+              client.postMessage({
+                type:       'REMINDER_REPLACED',
+                reminderId,
+                date,
+                token,
+              });
+            });
+          });
+        })
+        .catch(() => {
+          // Network failed — open the app so user can mark manually
+          return clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {
+            for (const client of clientList) {
+              if (client.url.includes('stockroom') && 'focus' in client) return client.focus();
+            }
+            if (clients.openWindow) return clients.openWindow(appUrl);
+          });
+        })
+    );
+    return;
+  }
+
+  // Default: 'open' action or notification body tap — focus or open app
   event.waitUntil(
     clients.matchAll({ type: 'window', includeUncontrolled: true }).then(clientList => {
       for (const client of clientList) {
-        if (client.url.includes('stockroom') && 'focus' in client) {
-          return client.focus();
-        }
+        if (client.url.includes('stockroom') && 'focus' in client) return client.focus();
       }
-      if (clients.openWindow) return clients.openWindow(targetUrl);
+      if (clients.openWindow) return clients.openWindow(appUrl);
     })
   );
 });

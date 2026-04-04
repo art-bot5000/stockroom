@@ -74,7 +74,7 @@
 
   /* ── TABS ── */
   #tabs { display: flex; gap: 4px; margin-bottom: 24px; background: rgba(26,29,39,0.7); border: 1px solid var(--glass-border); border-radius: 10px; padding: 4px; width: fit-content; backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); }
-  .tab { font-family: var(--sans); font-size: 13px; font-weight: 700; padding: 8px 18px; border-radius: 7px; border: none; cursor: pointer; background: transparent; color: var(--muted); transition: all 0.2s cubic-bezier(0.34,1.56,0.64,1); position: relative; overflow: hidden; }
+  .tab { font-family: var(--sans); font-size: 13px; font-weight: 700; padding: 8px 18px; border-radius: 7px; border: none; cursor: pointer; background: transparent; color: var(--muted); transition: all 0.2s cubic-bezier(0.34,1.56,0.64,1); position: relative; overflow: hidden; display: inline-flex; align-items: center; justify-content: center; gap: 5px; }
   .tab.active { background: var(--accent); color: #111; box-shadow: 0 2px 8px rgba(232,168,56,0.35); }
 
   @keyframes ripple-expand {
@@ -337,10 +337,9 @@
     /* ── MAIN LAYOUT ── */
     #main { padding: 16px 12px; }
 
-    /* ── TABS: scrollable, smaller ── */
-    #tabs { width: 100%; overflow-x: auto; -webkit-overflow-scrolling: touch; scrollbar-width: none; gap: 2px; padding: 3px; }
-    #tabs::-webkit-scrollbar { display: none; }
-    .tab { padding: 7px 13px; font-size: 12px; white-space: nowrap; }
+    /* ── TABS: two-row wrap on mobile ── */
+    #tabs { width: 100%; flex-wrap: wrap; gap: 4px; padding: 4px; }
+    .tab { flex: 1 1 auto; padding: 9px 10px; font-size: 12px; white-space: nowrap; text-align: center; justify-content: center; }
 
     /* ── CARDS: single column, slightly more padding ── */
     #items-grid { grid-template-columns: 1fr; gap: 12px; }
@@ -714,12 +713,12 @@
 <!-- ═══ MAIN ═══ -->
 <div id="main">
   <div id="tabs">
-    <button class="tab active" onclick="showView('stock',this)">📦 Stock</button>
-    <button class="tab" onclick="showView('report',this)">📋 Report</button>
+    <button class="tab active" onclick="showView('stock',this)">📦 Stockroom</button>
+    <button class="tab" onclick="showView('grocery',this)">🛒 Groceries</button>
     <button class="tab" onclick="showView('shopping',this)">🛍️ Shopping List</button>
     <button class="tab" onclick="showView('reminders',this)">🔔 Reminders</button>
     <button class="tab" onclick="showView('savings',this)">💰 Savings</button>
-    <button class="tab" onclick="showView('grocery',this)">🛒 Grocery</button>
+    <button class="tab" onclick="showView('report',this)">📋 Report</button>
     <button class="tab" onclick="showView('settings',this)">⚙️ Settings</button>
   </div>
 
@@ -3206,6 +3205,12 @@ function handleURLAction() {
     } else if (action === 'scan') {
       sessionStorage.setItem('barcode_target', 'scan-chooser');
       openBarcodeScanner();
+    } else if (action === 'reminder-sync') {
+      // Fired when user taps "Open STOCKROOM" from the email confirmation page
+      const id    = params.get('id')    || '';
+      const date  = params.get('date')  || today();
+      const token = params.get('token') || '';
+      if (id && token) applyReminderReplaced(id, date, token);
     } else if (action === 'unsubscribe') {
       handleUnsubscribe();
     } else if (action === 'share') {
@@ -3767,6 +3772,69 @@ function confirmLogReplacement() {
   toast('Replacement logged ✓');
 }
 
+// ── Smart reminder actions ──────────────────
+async function applyReminderReplaced(reminderId, date, token) {
+  // Verify via backend then apply locally
+  try {
+    const res  = await fetch(`${WORKER_URL}/reminder-pending?id=${encodeURIComponent(reminderId)}&token=${encodeURIComponent(token)}`);
+    const data = await res.json();
+    // Whether KV has it or not, apply locally with the provided date
+    const useDate = data.date || date || today();
+    _applyReplacedLocally(reminderId, useDate);
+  } catch(e) {
+    // Offline or error — still apply locally
+    _applyReplacedLocally(reminderId, date || today());
+  }
+}
+
+function _applyReplacedLocally(reminderId, date) {
+  let changed = false;
+  if (reminderId.startsWith('item_')) {
+    const itemId = reminderId.replace('item_', '');
+    const item   = items.find(i => i.id === itemId);
+    if (item) { item.lastReplaced = date; touchItem(item); saveData(); changed = true; }
+  } else {
+    const r = reminders.find(r => r.id === reminderId);
+    if (r) {
+      r.lastReplaced = date;
+      saveReminders();
+      changed = true;
+      if (r.linkedItemId) {
+        const item = items.find(i => i.id === r.linkedItemId);
+        if (item) { item.lastReplaced = date; touchItem(item); saveData(); }
+      }
+    }
+  }
+  if (changed) {
+    renderReminders();
+    setTimeout(syncAll, 400);
+    showToast('✅ Marked as replaced');
+  }
+}
+
+// Poll backend for any reminder replacements triggered via email (runs on load + visibility change)
+async function pollReminderReplacements() {
+  if (!WORKER_URL) return;
+  // Get tokens for all current reminders that are due/overdue
+  const allR = [
+    ...reminders,
+    ...items.filter(i => i.replacementInterval).map(i => ({
+      id: 'item_' + i.id, name: i.name, interval: i.replacementInterval, unit: i.replacementUnit, lastReplaced: i.lastReplaced,
+    })),
+  ].filter(r => ['overdue','soon','today'].includes(getReminderStatus(r)));
+
+  for (const r of allR) {
+    try {
+      const tokenRes  = await fetch(`${WORKER_URL}/reminder-token`, { method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify({ reminderId: r.id }) });
+      const { token } = await tokenRes.json();
+      if (!token) continue;
+      const checkRes  = await fetch(`${WORKER_URL}/reminder-pending?id=${encodeURIComponent(r.id)}&token=${encodeURIComponent(token)}`);
+      const check     = await checkRes.json();
+      if (check.replaced) _applyReplacedLocally(r.id, check.date || today());
+    } catch(e) { /* ignore network errors */ }
+  }
+}
+
 // ── In-app notification check ─────────────
 function checkReminderNotifications() {
   if (!notifEnabled || Notification.permission !== 'granted') return;
@@ -3779,7 +3847,7 @@ function checkReminderNotifications() {
     })),
   ];
 
-  const overdue = allReminders.filter(r => getReminderStatus(r) === 'overdue');
+  const overdue  = allReminders.filter(r => getReminderStatus(r) === 'overdue');
   const dueToday = allReminders.filter(r => getReminderDaysUntil(r) === 0);
 
   if (!overdue.length && !dueToday.length) return;
@@ -3787,13 +3855,53 @@ function checkReminderNotifications() {
   const today2 = new Date().toISOString().slice(0,10);
   if (localStorage.getItem('stockroom_last_reminder_notif') === today2) return;
 
-  const title = overdue.length
-    ? `🔔 ${overdue.length} replacement${overdue.length !== 1 ? 's' : ''} overdue`
-    : `🔔 Replacement due today`;
-  const body = [...overdue, ...dueToday].slice(0,3).map(r => `• ${r.name}`).join('\n');
-
-  sendLocalNotification(title, body, 'stockroom-reminders');
+  // Send one notification per due/overdue reminder (up to 3) with a Replaced action button
+  const toNotify = [...overdue, ...dueToday].slice(0, 3);
+  toNotify.forEach(r => sendReminderActionNotification(r));
   localStorage.setItem('stockroom_last_reminder_notif', today2);
+}
+
+async function sendReminderActionNotification(r) {
+  if (!('serviceWorker' in navigator) || !navigator.serviceWorker.controller) {
+    // Fallback: plain notification
+    sendLocalNotification(`🔔 ${r.name}`, 'Tap to open STOCKROOM', 'stockroom-reminder-' + r.id);
+    return;
+  }
+  // Fetch a token for this reminder so the SW can call /reminder-done
+  let token = '';
+  try {
+    const res = await fetch(`${WORKER_URL}/reminder-token`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ reminderId: r.id }),
+    });
+    const data = await res.json();
+    token = data.token || '';
+  } catch(e) { /* no token — will open app instead */ }
+
+  const status = getReminderStatus(r);
+  const body   = status === 'overdue'
+    ? `Overdue by ${Math.abs(getReminderDaysUntil(r))} day${Math.abs(getReminderDaysUntil(r)) !== 1 ? 's' : ''}`
+    : 'Due today';
+
+  const reg = await navigator.serviceWorker.ready;
+  reg.showNotification(`🔔 ${r.name}`, {
+    body,
+    tag:       'stockroom-reminder-' + r.id,
+    renotify:  true,
+    icon:      './icon-192.png',
+    badge:     './icon-192.png',
+    actions: [
+      { action: 'replaced', title: '✅ Replaced' },
+      { action: 'open',     title: '📦 Open app' },
+    ],
+    data: {
+      url:        window.location.href,
+      reminderId: r.id,
+      reminderName: r.name,
+      token,
+      workerUrl:  WORKER_URL,
+    },
+  });
 }
 
 
@@ -4500,17 +4608,28 @@ function setSort(val) {
 //  SWIPE TO LOG
 // ═══════════════════════════════════════════
 const swipeState = {};
-const SWIPE_THRESHOLD = 72; // px to trigger
+const SWIPE_THRESHOLD  = 110; // px to trigger (was 72)
+const SWIPE_LOCK_ANGLE = 30;  // degrees — swipe must be within this of horizontal
 
 function swipeStart(e, id) {
-  swipeState[id] = { startX: e.touches[0].clientX, triggered: false };
+  const t = e.touches[0];
+  swipeState[id] = { startX: t.clientX, startY: t.clientY, triggered: false, locked: null };
 }
 
 function swipeMove(e, id) {
   const s = swipeState[id];
   if (!s) return;
   const dx = e.touches[0].clientX - s.startX;
+  const dy = e.touches[0].clientY - s.startY;
   if (dx < 0) return; // only right swipe
+
+  // Direction lock: decide horizontal vs vertical on first meaningful movement
+  if (s.locked === null && (Math.abs(dx) > 6 || Math.abs(dy) > 6)) {
+    const angle = Math.abs(Math.atan2(Math.abs(dy), dx) * 180 / Math.PI);
+    s.locked = angle < SWIPE_LOCK_ANGLE ? 'h' : 'v';
+  }
+  if (s.locked !== 'h') return; // vertical scroll — ignore
+
   const hint = document.getElementById('swipe-hint-' + id);
   if (hint) hint.style.opacity = Math.min(1, dx / SWIPE_THRESHOLD);
   if (dx > SWIPE_THRESHOLD && !s.triggered) {
@@ -4525,7 +4644,10 @@ function swipeEnd(e, id) {
   if (!s) return;
   const hint = document.getElementById('swipe-hint-' + id);
   if (hint) hint.style.opacity = 0;
-  if (s.triggered) openLogModal(id);
+  // Use changedTouches for final position — only open if user ended the swipe far enough right
+  const endX = e.changedTouches[0].clientX;
+  const finalDx = endX - s.startX;
+  if (s.triggered && finalDx >= SWIPE_THRESHOLD) openLogModal(id);
   delete swipeState[id];
 }
 
@@ -4589,8 +4711,20 @@ document.addEventListener('visibilitychange', () => {
       lastAutoSync = now;
       checkCloudAhead();
     }
+    // Check if any reminder was marked replaced via email while app was in background
+    setTimeout(pollReminderReplacements, 800);
   }
 });
+
+// ── Service Worker message handler ───────────────────────
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.addEventListener('message', event => {
+    if (event.data?.type === 'REMINDER_REPLACED') {
+      const { reminderId, date, token } = event.data;
+      _applyReplacedLocally(reminderId, date);
+    }
+  });
+}
 
 // Poll every 5 minutes as a backstop
 setInterval(() => {
