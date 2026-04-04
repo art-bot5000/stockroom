@@ -2016,6 +2016,8 @@ function saveData() {
     if (!Array.isArray(items)) { console.error('stockroom: items is not an array, aborting save'); return; }
     localStorage.setItem('stockroom_items', JSON.stringify(items));
   } catch(e) { console.warn('stockroom: could not save items', e); }
+  // Keep profile store in sync so stale items can't resurrect via loadProfile
+  if (activeProfile) saveCurrentProfile();
 }
 
 // Stamp updatedAt on an item whenever it's modified
@@ -4397,7 +4399,8 @@ function loadProfile(key) {
   const profiles = getProfiles();
   const profile  = profiles[activeProfile];
   if (profile) {
-    items    = profile.items    || [];
+    const deletedIds = loadDeletedIds();
+    items    = (profile.items || []).filter(i => !deletedIds.has(i.id));
     settings = { threshold: 20, country: 'GB', ...profile.settings };
   } else {
     // First load — migrate existing data into default profile
@@ -4410,8 +4413,12 @@ function loadProfile(key) {
 }
 
 function saveCurrentProfile() {
+  const deletedIds = loadDeletedIds();
   const profiles = getProfiles();
-  profiles[activeProfile] = { items: JSON.parse(JSON.stringify(items)), settings };
+  profiles[activeProfile] = {
+    items: JSON.parse(JSON.stringify(items.filter(i => !deletedIds.has(i.id)))),
+    settings,
+  };
   saveProfiles(profiles);
 }
 
