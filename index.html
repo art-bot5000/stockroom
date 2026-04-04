@@ -434,8 +434,8 @@
   .sns-badge-eligible { background:rgba(232,168,56,0.15); color:var(--warn); }
   .sns-badge-tracking { background:rgba(91,141,238,0.15); color:var(--accent2); }
   .sns-stats { display:flex; gap:16px; flex-wrap:wrap; margin-bottom:12px; }
-  .sns-stat { font-size:13px; color:var(--muted); }
-  .sns-stat strong { display:block; font-size:15px; font-weight:700; color:var(--text); font-family:var(--mono); }
+  .sns-stat { font-size:13px; color:var(--muted); display:flex; flex-direction:column; gap:1px; }
+  .sns-stat strong { font-size:15px; font-weight:700; color:var(--text); font-family:var(--mono); }
   .sns-saving { font-size:14px; color:var(--ok); font-weight:700; font-family:var(--mono); }
   .sns-actions { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
   .sns-summary-card { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:22px; margin-bottom:20px; display:flex; gap:24px; flex-wrap:wrap; align-items:center; }
@@ -6680,10 +6680,10 @@ function renderSavingsView() {
         ${badge}
       </div>
       <div class="sns-stats">
-        <div class="sns-stat"><strong>${purchaseCount}</strong>purchases</div>
-        ${spanDays ? `<div class="sns-stat"><strong>${Math.round(spanDays/30.5 * 10)/10}mo</strong>over</div>` : ''}
-        ${lastPrice ? `<div class="sns-stat"><strong>${esc(lastPrice)}</strong>last price</div>` : ''}
-        ${avgMonthlySpend ? `<div class="sns-stat"><strong>£${avgMonthlySpend.toFixed(2)}</strong>/month avg spend</div>` : ''}
+        <div class="sns-stat"><strong>${purchaseCount}</strong><span>purchases</span></div>
+        ${spanDays ? `<div class="sns-stat"><strong>${Math.round(spanDays/30.5 * 10)/10}mo</strong><span>tracked</span></div>` : ''}
+        ${lastPrice ? `<div class="sns-stat"><strong>${esc(lastPrice)}</strong><span>last price</span></div>` : ''}
+        ${avgMonthlySpend ? `<div class="sns-stat"><strong>£${avgMonthlySpend.toFixed(2)}</strong><span>/month avg</span></div>` : ''}
       </div>
       ${savingEl}
       <div class="sns-actions">${toggleBtn}${snsBuyBtn}</div>
