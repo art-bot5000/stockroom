@@ -2095,6 +2095,7 @@ function wizardConnectDropbox() {
 }
 
 function wizardNext() {
+  localStorage.setItem('stockroom_country_set', '1');
   document.getElementById('wizard-step-1').classList.remove('active');
   document.getElementById('wizard-step-2').classList.add('active');
   document.getElementById('dot-1').classList.remove('active');
@@ -2115,10 +2116,14 @@ function wizardBack() {
 function wizardFinish() {
   settings.country = wizardCountry;
   try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e){}
-  localStorage.setItem('stockroom_seen','1');
+  localStorage.setItem('stockroom_seen', '1');
+  localStorage.setItem('stockroom_country_set', '1');
   document.getElementById('wizard').style.display = 'none';
   document.getElementById('setting-country').value = settings.country;
   renderAll();
+  // Land on Stockroom
+  const stockTab = [...document.querySelectorAll('.tab')].find(t => t.textContent.includes('Stockroom'));
+  if (stockTab) showView('stock', stockTab);
 }
 
 // ═══════════════════════════════════════════
@@ -7730,6 +7735,12 @@ function handleOAuthRedirect() {
                 if (preAuthView === 'settings') {
                   const tab = [...document.querySelectorAll('.tab')].find(t => t.textContent.includes('Settings'));
                   if (tab) showView('settings', tab);
+                } else {
+                  // Came from wizard — go to Stockroom
+                  localStorage.setItem('stockroom_seen', '1');
+                  document.getElementById('wizard').style.display = 'none';
+                  const stockTab = [...document.querySelectorAll('.tab')].find(t => t.textContent.includes('Stockroom'));
+                  if (stockTab) showView('stock', stockTab);
                 }
               } catch(e){}
             });
@@ -7767,6 +7778,12 @@ function handleOAuthRedirect() {
                 if (preAuthView === 'settings') {
                   const tab = [...document.querySelectorAll('.tab')].find(t => t.textContent.includes('Settings'));
                   if (tab) showView('settings', tab);
+                } else {
+                  // Came from wizard — go to Stockroom
+                  localStorage.setItem('stockroom_seen', '1');
+                  document.getElementById('wizard').style.display = 'none';
+                  const stockTab = [...document.querySelectorAll('.tab')].find(t => t.textContent.includes('Stockroom'));
+                  if (stockTab) showView('stock', stockTab);
                 }
               } catch(e){}
             });
@@ -8740,13 +8757,17 @@ function init() {
   wizardCountry = settings.country || 'GB';
   selectCountry(wizardCountry);
 
-  const seen = localStorage.getItem('stockroom_seen');
+  const seen       = localStorage.getItem('stockroom_seen');
   const wizardStep = localStorage.getItem('stockroom_wizard_step');
+  const countrySet = localStorage.getItem('stockroom_country_set');
 
   if (seen) {
     document.getElementById('wizard').style.display = 'none';
   } else if (wizardStep === '2' || driveConnected) {
     localStorage.removeItem('stockroom_wizard_step');
+    wizardNext();
+  } else if (countrySet) {
+    // Already chose country before — skip straight to sync step
     wizardNext();
   }
 
