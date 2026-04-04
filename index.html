@@ -7186,6 +7186,10 @@ function saveItem() {
       item.months       = parseFloat(document.getElementById('f-months').value)||1;
       item.url          = document.getElementById('f-url').value.trim();
       item.store        = storeVal;
+      // Propagate new store name to all log entries so filter bar stays clean
+      if (storeVal && item.logs) {
+        item.logs.forEach(l => { if (l.store && l.store !== storeVal) l.store = storeVal; });
+      }
       item.notes        = document.getElementById('f-notes').value.trim();
       item.startedUsing = startedUsing;
       item.rating       = currentRating || null;
