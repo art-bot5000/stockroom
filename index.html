@@ -559,6 +559,19 @@
   </div>
 </div>
 
+<!-- ═══ REMINDER TIMELINE MODAL ═══ -->
+<div class="modal-backdrop" id="reminder-timeline-modal" style="z-index:310">
+  <div class="modal" style="max-width:500px">
+    <h2 id="rtl-title" style="font-size:17px;margin-bottom:4px"></h2>
+    <p id="rtl-subtitle" style="font-size:13px;color:var(--muted);margin-bottom:20px"></p>
+    <div id="rtl-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('reminder-timeline-modal')">Close</button>
+      <button class="btn btn-primary" id="rtl-mark-btn" onclick="">✅ Mark replaced</button>
+    </div>
+  </div>
+</div>
+
 <!-- ═══ LOG REPLACEMENT MODAL ═══ -->
 <div class="modal-backdrop" id="log-replacement-modal">
   <div class="modal" style="max-width:380px;text-align:center">
@@ -736,7 +749,6 @@
   <div id="tabs">
     <button class="tab active" onclick="showView('stock',this)">📦 Stockroom</button>
     <button class="tab" onclick="showView('grocery',this)">🛒 Groceries</button>
-    <button class="tab" onclick="showView('shopping',this)">🛍️ Shopping List</button>
     <button class="tab" onclick="showView('reminders',this)">🔔 Reminders</button>
     <button class="tab" onclick="showView('savings',this)">💰 Savings</button>
     <button class="tab" onclick="showView('report',this)">📋 Report</button>
@@ -745,9 +757,37 @@
 
   <!-- STOCK VIEW -->
   <div class="view active" id="view-stock">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-      <h2 style="font-size:18px;font-weight:700">Your Stockroom</h2>
+
+  <!-- Shared Stockroom / Shopping List header — inside stock view, shown for both stock+shopping -->
+  <div id="stock-shopping-header" style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;min-height:32px">
+    <div style="display:flex;align-items:center;gap:0;flex-wrap:wrap">
+      <button id="hdr-stock-btn" onclick="switchToStock()"
+        style="font-size:18px;font-weight:700;color:var(--text);background:none;border:none;cursor:pointer;padding:0;font-family:var(--sans)">Your Stockroom</button>
+      <span style="font-size:18px;font-weight:400;color:var(--border);margin:0 8px;pointer-events:none">—</span>
+      <button id="hdr-shopping-btn" onclick="switchToShopping()"
+        style="font-size:18px;font-weight:400;color:var(--muted);background:none;border:none;cursor:pointer;padding:0;font-family:var(--sans)">Shopping List</button>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px">
+      <div class="days-toggle" id="days-toggle" onclick="toggleShoppingDays()" style="display:none">
+        <span id="days-opt-30" class="days-opt active">30</span>
+        <span class="days-sep">/</span>
+        <span id="days-opt-7" class="days-opt faded">7</span>
+        <span style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-left:2px">days</span>
+      </div>
       <span id="item-count" style="font-size:12px;color:var(--muted)">0 items</span>
+    </div>
+  </div>
+
+    <!-- Pending deliveries section -->
+    <div id="pending-deliveries-section" style="display:none;margin-bottom:20px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <div style="display:flex;align-items:center;gap:8px">
+          <span style="font-size:13px;font-weight:700;color:#5b8dee">📦 Pending Deliveries</span>
+          <span id="pending-deliveries-badge" style="background:rgba(91,141,238,0.2);border:1px solid rgba(91,141,238,0.3);color:#5b8dee;font-size:11px;font-weight:700;padding:1px 7px;border-radius:99px;font-family:var(--mono)"></span>
+        </div>
+      </div>
+      <div id="pending-deliveries-grid"></div>
+      <div style="border-bottom:1px solid var(--border);margin-bottom:16px;margin-top:4px"></div>
     </div>
 
     <!-- Incomplete items section -->
@@ -816,6 +856,20 @@
     </div>
     <div id="sns-banner" style="display:none"></div>
     <div id="items-grid"></div>
+
+    <!-- Shopping panel — shown when switchToShopping() is called, inside view-stock -->
+    <div id="shopping-panel" style="display:none">
+      <div style="display:flex;justify-content:flex-end;align-items:center;margin-bottom:12px;gap:8px">
+        <div id="shopping-subtitle" style="font-size:12px;color:var(--muted);font-family:var(--mono);flex:1">Items running out in the next 30 days</div>
+        <button class="btn btn-ghost btn-sm" onclick="exportShoppingList()">⬇ Export</button>
+        <button class="btn btn-primary btn-sm" onclick="openStorePickerModal()">⚙ Stores</button>
+      </div>
+      <div id="shopping-store-pills" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"></div>
+      <div id="shopping-tag-filter-bar" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
+        <span style="font-size:11px;color:var(--muted);font-family:var(--mono);letter-spacing:0.5px;text-transform:uppercase">Tags:</span>
+      </div>
+      <div id="shopping-content"></div>
+    </div>
   </div>
 
   <!-- REMINDERS VIEW -->
@@ -896,34 +950,8 @@
       <div id="spend-chart" style="margin-bottom:12px"></div>
       <div id="spend-breakdown"></div>
     </div>
+    <div id="report-pending-deliveries" style="display:none;margin-bottom:24px"></div>
     <div id="report-content"></div>
-  </div>
-
-  <!-- SHOPPING LIST VIEW -->
-  <div class="view" id="view-shopping">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;flex-wrap:wrap;gap:12px">
-      <div>
-        <div style="display:flex;align-items:center;gap:14px">
-          <h2 style="font-size:18px;font-weight:700">Shopping List</h2>
-          <div class="days-toggle" id="days-toggle" onclick="toggleShoppingDays()">
-            <span id="days-opt-30" class="days-opt active">30</span>
-            <span class="days-sep">/</span>
-            <span id="days-opt-7" class="days-opt faded">7</span>
-            <span style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-left:2px">days</span>
-          </div>
-        </div>
-        <div id="shopping-subtitle" style="font-size:12px;color:var(--muted);font-family:var(--mono);margin-top:4px">Items running out in the next 30 days</div>
-      </div>
-      <div style="display:flex;gap:8px">
-        <button class="btn btn-ghost btn-sm" onclick="exportShoppingList()">⬇ Export</button>
-        <button class="btn btn-primary btn-sm" onclick="openStorePickerModal()">⚙ Stores</button>
-      </div>
-    </div>
-    <div id="shopping-store-pills" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px"></div>
-    <div id="shopping-tag-filter-bar" style="display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px">
-      <span style="font-size:11px;color:var(--muted);font-family:var(--mono);letter-spacing:0.5px;text-transform:uppercase">Tags:</span>
-    </div>
-    <div id="shopping-content"></div>
   </div>
 
   <!-- SETTINGS VIEW -->
@@ -1132,7 +1160,6 @@
       </p>
     </div>
   </div>
-</div>
 
 <!-- ═══ GROCERY VIEW ═══ -->
 <div class="view" id="view-grocery">
@@ -1146,8 +1173,6 @@
       <button class="btn btn-primary btn-sm" onclick="openAddGroceryItem()">+ Add Item</button>
     </div>
   </div>
-
-  <!-- toolbar: search + sort -->
   <div class="grocery-toolbar">
     <input class="grocery-search" id="grocery-search" type="search" placeholder="Search items…" oninput="renderGrocery()" autocomplete="off">
     <div class="grocery-sort-toggle">
@@ -1155,19 +1180,15 @@
       <button class="grocery-sort-btn" id="grocery-sort-alpha" onclick="setGrocerySort('alpha',this)">A–Z</button>
     </div>
   </div>
-
-  <!-- interval info -->
   <div class="grocery-interval-info" id="grocery-interval-info"></div>
-
-  <!-- list -->
   <div id="grocery-list-body"></div>
-
-  <!-- checked items footer -->
   <div id="grocery-checked-bar" style="display:none" class="grocery-checked-bar">
     <span id="grocery-checked-count" style="font-size:13px;color:var(--muted)"></span>
     <button class="btn btn-ghost btn-sm" onclick="clearCheckedGrocery()">Clear checked</button>
   </div>
 </div>
+
+</div><!-- end #main -->
 
 <!-- ═══ GROCERY ADD/EDIT MODAL ═══ -->
 <div class="modal-backdrop" id="grocery-item-modal" style="z-index:300">
@@ -1628,19 +1649,16 @@
 </div>
 
 <!-- ═══ LOG PURCHASE MODAL ═══ -->
+<!-- ═══ LOG PURCHASE MODAL (records order, no stock yet) ═══ -->
 <div class="modal-backdrop" id="log-modal">
   <div class="modal">
     <h2 id="log-modal-title">Log Purchase</h2>
-    <p class="subtitle">Record a new purchase to update your stock estimate.</p>
+    <p class="subtitle">Records the purchase. Stock updates when you mark it as Delivered.</p>
     <div class="form-grid">
       <div class="field"><label>Date purchased</label><input type="date" id="log-date"></div>
       <div class="field"><label>Quantity</label><input type="number" id="log-qty" min="0.1" step="0.1" value="1"></div>
       <div class="field"><label>Price paid (optional)</label><input type="text" id="log-price" placeholder="e.g. £12.99"></div>
-      <div class="field"><label>Store <span style="font-weight:400;color:var(--muted)">(auto-filled from item)</span></label><input type="text" id="log-store" placeholder="Amazon, Costco, Tesco..."></div>
-      <div class="field"><label>Started using</label><input type="date" id="log-started-using"></div>
-      <div class="field" style="display:flex;align-items:flex-end;padding-bottom:2px">
-        <p style="font-size:12px;color:var(--muted);line-height:1.5">Leave blank if you started using it straight away.</p>
-      </div>
+      <div class="field"><label>Store</label><input type="text" id="log-store" placeholder="Amazon, Costco, Tesco..."></div>
     </div>
     <div id="log-history" class="modal-section" style="display:none">
       <p style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px;margin-bottom:10px">Purchase History</p>
@@ -1649,6 +1667,63 @@
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('log-modal')">Cancel</button>
       <button class="btn btn-primary" onclick="saveLog()">Save Purchase</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ DELIVERED MODAL (puts stock in, clears ordered) ═══ -->
+<div class="modal-backdrop" id="delivered-modal">
+  <div class="modal" style="max-width:440px">
+    <h2 id="delivered-modal-title">📦 Mark as Delivered</h2>
+    <p class="subtitle">This adds the item to your stock and clears the ordered flag.</p>
+    <div class="form-grid">
+      <div class="field"><label>Delivery date</label><input type="date" id="delivered-date"></div>
+      <div class="field"><label>Quantity delivered</label><input type="number" id="delivered-qty" min="0.1" step="0.1" value="1"></div>
+    </div>
+    <div style="margin-top:14px;padding:14px;background:var(--surface2);border-radius:10px;border:1px solid var(--border)">
+      <label style="font-size:13px;font-weight:700;display:flex;align-items:center;gap:8px;cursor:pointer">
+        <input type="checkbox" id="delivered-started-now" onchange="toggleDeliveredStarted()" style="width:16px;height:16px">
+        I'm starting to use this straight away
+      </label>
+      <div id="delivered-started-row" style="display:none;margin-top:10px">
+        <div class="field"><label>Started using date</label><input type="date" id="delivered-started-date"></div>
+      </div>
+      <p id="delivered-started-hint" style="font-size:12px;color:var(--muted);margin-top:8px;line-height:1.5">
+        If you're not using it immediately (e.g. it's going into a cupboard), leave this unchecked — you'll be reminded to set the date when you open the first one.
+      </p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('delivered-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveDelivered()">✅ Mark Delivered</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ STARTED USING MODAL ═══ -->
+<div class="modal-backdrop" id="started-using-modal">
+  <div class="modal" style="max-width:400px">
+    <h2 id="started-using-title">📅 When did you start using it?</h2>
+    <p class="subtitle">This anchors the stock calculation and any replacement reminders to the right date.</p>
+    <div class="field" style="margin-bottom:16px">
+      <label>Date started using</label>
+      <input type="date" id="started-using-date">
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('started-using-modal')">Not yet</button>
+      <button class="btn btn-primary" onclick="saveStartedUsing()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ POST-DELIVERY REMINDER MODAL ═══ -->
+<div class="modal-backdrop" id="delivery-reminder-modal" style="z-index:310">
+  <div class="modal" style="max-width:420px">
+    <h2>🔔 Set a Replacement Reminder?</h2>
+    <p class="subtitle" id="delivery-reminder-subtitle">Now it's in stock, do you want a reminder to replace it?</p>
+    <div id="delivery-reminder-body"></div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('delivery-reminder-modal')">Skip</button>
+      <button class="btn btn-primary" onclick="saveDeliveryReminder()">Set Reminder</button>
     </div>
   </div>
 </div>
@@ -1829,7 +1904,10 @@ function timeAgo(dateStr) {
 
 function calcStock(item) {
   if (!item.logs || !item.logs.length) return null;
-  const last = item.logs[item.logs.length - 1];
+  // Only count delivered (non-pending) logs for stock calculation
+  const deliveredLogs = item.logs.filter(l => !l.pendingDelivery);
+  if (!deliveredLogs.length) return null;
+  const last = deliveredLogs[deliveredLogs.length - 1];
 
   // If a manual stock count has been recorded, use actual consumption rate
   if (item.stockCount != null && item.stockCountDate) {
@@ -3221,8 +3299,7 @@ function handleURLAction() {
     } else if (action === 'log-purchase') {
       openLogPicker();
     } else if (action === 'shopping') {
-      const tab = [...document.querySelectorAll('.tab')].find(t => t.textContent.includes('Shopping'));
-      if (tab) showView('shopping', tab);
+      showShoppingListInline();
     } else if (action === 'scan') {
       sessionStorage.setItem('barcode_target', 'scan-chooser');
       openBarcodeScanner();
@@ -3387,6 +3464,65 @@ const _originalLookupBarcode = window.lookupBarcode;
 
 function getQuickAddItems() {
   return items.filter(i => i.quickAdded);
+}
+
+function renderPendingDeliveries() {
+  const pending = items.filter(i => i.logs?.some(l => l.pendingDelivery));
+
+  // ── Stock view section ──────────────────────────────────
+  const section = document.getElementById('pending-deliveries-section');
+  const grid    = document.getElementById('pending-deliveries-grid');
+  const badge   = document.getElementById('pending-deliveries-badge');
+  if (section && grid) {
+    if (!pending.length) {
+      section.style.display = 'none';
+    } else {
+      section.style.display = 'block';
+      if (badge) badge.textContent = pending.length;
+      grid.innerHTML = pending.map(item => {
+        const pendingLog = [...item.logs].reverse().find(l => l.pendingDelivery);
+        const orderedDate = pendingLog?.date ? fmtDate(pendingLog.date) : '—';
+        const qty = pendingLog?.qty || item.qty || 1;
+        const price = pendingLog?.price || '';
+        return `<div class="incomplete-card" style="border-color:rgba(91,141,238,0.4)">
+          <div style="flex:1;min-width:0">
+            <div class="inc-name">${esc(item.name)}</div>
+            <div class="inc-meta">Ordered ${orderedDate} · qty ${qty}${price ? ' · ' + esc(price) : ''}</div>
+          </div>
+          <button class="btn btn-sm" style="background:rgba(76,187,138,0.15);color:var(--ok);border:1px solid rgba(76,187,138,0.3);white-space:nowrap"
+            onclick="openDeliveredModal('${item.id}')">📦 Delivered</button>
+        </div>`;
+      }).join('');
+    }
+  }
+
+  // ── Report view section ─────────────────────────────────
+  const reportEl = document.getElementById('report-pending-deliveries');
+  if (reportEl) {
+    if (!pending.length) {
+      reportEl.style.display = 'none';
+    } else {
+      reportEl.style.display = 'block';
+      reportEl.innerHTML = `
+        <div style="background:rgba(91,141,238,0.08);border:1px solid rgba(91,141,238,0.25);border-radius:12px;padding:18px 20px">
+          <div style="font-size:13px;font-weight:700;color:#5b8dee;margin-bottom:12px">📦 Pending Deliveries — ${pending.length} item${pending.length!==1?'s':''}</div>
+          ${pending.map(item => {
+            const pendingLog = [...item.logs].reverse().find(l => l.pendingDelivery);
+            const orderedDate = pendingLog?.date ? fmtDate(pendingLog.date) : '—';
+            const qty   = pendingLog?.qty   || item.qty || 1;
+            const price = pendingLog?.price || '';
+            return `<div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 0;border-bottom:1px solid rgba(91,141,238,0.15)">
+              <div>
+                <div style="font-size:14px;font-weight:600">${esc(item.name)}</div>
+                <div style="font-size:12px;color:var(--muted);font-family:var(--mono);margin-top:2px">Ordered ${orderedDate} · qty ${qty}${price ? ' · ' + esc(price) : ''}</div>
+              </div>
+              <button class="btn btn-sm" style="background:rgba(76,187,138,0.15);color:var(--ok);border:1px solid rgba(76,187,138,0.3);white-space:nowrap"
+                onclick="openDeliveredModal('${item.id}')">📦 Delivered</button>
+            </div>`;
+          }).join('')}
+        </div>`;
+    }
+  }
 }
 
 function renderIncompleteSection() {
@@ -3616,24 +3752,225 @@ function reminderCardHTML(r) {
     : 'Never replaced';
   const nextLabel = dueDate ? `Next: ${fmtDate(dueDate.toISOString().slice(0,10))}` : 'Set a date to track';
 
-  return `<div style="background:var(--surface);border:1px solid ${borderColor};border-radius:12px;padding:14px 16px;margin-bottom:10px;display:flex;gap:12px;align-items:flex-start">
+  return `<div style="background:var(--surface);border:1px solid ${borderColor};border-radius:12px;padding:14px 16px;margin-bottom:10px;display:flex;gap:12px;align-items:flex-start;cursor:pointer;transition:border-color 0.15s,box-shadow 0.15s" onclick="openReminderTimeline('${r.id}')" title="Tap to view timeline">
     <div style="flex:1;min-width:0">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:4px">
         <span style="font-size:15px;font-weight:700;color:var(--text)">${esc(r.name)}</span>
         ${isFromItem ? `<span style="font-size:10px;color:var(--muted);font-family:var(--mono);padding:1px 6px;border:1px solid var(--border);border-radius:99px">linked</span>` : ''}
+        <span style="font-size:10px;color:var(--muted);margin-left:auto;opacity:0.5">📊 Timeline</span>
       </div>
       <div style="font-size:12px;font-weight:700;color:${statusColor};margin-bottom:4px">${timeLabel}</div>
       <div style="font-size:11px;color:var(--muted);font-family:var(--mono);line-height:1.8">
         ${intervalLabel} · ${lastLabel}<br>${nextLabel}
       </div>
       ${r.notes ? `<div style="font-size:12px;color:var(--muted);font-style:italic;margin-top:6px">💬 ${esc(r.notes)}</div>` : ''}
-      <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap">
+      <div style="display:flex;gap:6px;margin-top:10px;flex-wrap:wrap" onclick="event.stopPropagation()">
         <button class="btn btn-primary btn-sm" onclick="openLogReplacementModal('${r.id}')">✅ Mark replaced</button>
         ${!isFromItem ? `<button class="btn btn-ghost btn-sm" onclick="openEditReminderModal('${r.id}')">✏️ Edit</button>` : `<button class="btn btn-ghost btn-sm" onclick="openEditModal('${r.fromItem}');enableItemEdit()">✏️ Edit item</button>`}
         ${!isFromItem ? `<button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="deleteReminder('${r.id}')">Delete</button>` : ''}
       </div>
     </div>
   </div>`;
+}
+
+// ── Reminder Timeline ──────────────────────
+function openReminderTimeline(reminderId) {
+  // Reconstruct the reminder object (same logic as renderReminders)
+  let r = reminders.find(rem => rem.id === reminderId);
+  if (!r) {
+    const itemId = reminderId.replace('item_', '');
+    const item   = items.find(i => 'item_' + i.id === reminderId);
+    if (item) {
+      const fallbackDate = item.startedUsing || item.logs?.[0]?.date || null;
+      r = {
+        id:           reminderId,
+        name:         item.name,
+        interval:     item.replacementInterval,
+        unit:         item.replacementUnit,
+        lastReplaced: item.lastReplaced || fallbackDate || null,
+        lastReplacedIsFallback: !item.lastReplaced && !!fallbackDate,
+        fromItem:     item.id,
+      };
+    }
+  }
+  if (!r) return;
+
+  const intervalDays = getReminderIntervalDays(r);
+  const now          = new Date();
+  const today        = now.toISOString().slice(0, 10);
+  const status       = getReminderStatus(r);
+  const dueDate      = getReminderDueDate(r);
+
+  document.getElementById('rtl-title').textContent = r.name;
+  document.getElementById('rtl-subtitle').textContent =
+    `Every ${r.interval} ${r.unit} · ${r.lastReplaced
+      ? (r.lastReplacedIsFallback ? 'Started ' : 'Last replaced ') + fmtDate(r.lastReplaced)
+      : 'No start date recorded'}`;
+
+  // Wire up the Mark replaced button
+  const markBtn = document.getElementById('rtl-mark-btn');
+  markBtn.onclick = () => { closeModal('reminder-timeline-modal'); openLogReplacementModal(reminderId); };
+
+  // ── Build timeline nodes ─────────────────
+  // Show 2 past cycles + current + 3 future cycles + reorder point
+  const nodes = [];
+
+  if (r.lastReplaced) {
+    const startMs    = new Date(r.lastReplaced + 'T12:00:00').getTime();
+    const intervalMs = intervalDays * 86400000;
+
+    // Past replacement events (up to 2 before the most recent)
+    for (let i = 2; i >= 1; i--) {
+      const d = new Date(startMs - i * intervalMs);
+      if (d < new Date(startMs - 365 * 86400000 * 2)) continue; // don't go more than 2 years back
+      nodes.push({ type: 'past', date: d, label: 'Replaced' });
+    }
+    // Most recent replacement (anchor)
+    nodes.push({ type: 'anchor', date: new Date(startMs), label: r.lastReplacedIsFallback ? 'First used' : 'Last replaced' });
+    // Future replacement events
+    for (let i = 1; i <= 3; i++) {
+      const d = new Date(startMs + i * intervalMs);
+      const isPast = d < now;
+      nodes.push({
+        type:  isPast ? 'overdue' : (i === 1 ? 'next' : 'future'),
+        date:  d,
+        label: i === 1 ? 'Replace' : 'Replace',
+        cycle: i,
+      });
+    }
+    // Reorder point — 80% into the NEXT cycle (buy before you run out)
+    const nextDue   = new Date(startMs + intervalMs);
+    const cycleAfter = new Date(startMs + 2 * intervalMs);
+    const reorderDate = new Date(nextDue.getTime() + (cycleAfter.getTime() - nextDue.getTime()) * 0.2);
+    // Only show reorder if it's in the future
+    if (reorderDate > now) {
+      nodes.push({ type: 'reorder', date: reorderDate, label: 'Reorder by' });
+    }
+    // Sort all by date
+    nodes.sort((a, b) => a.date - b.date);
+  }
+
+  // ── Current period progress ──────────────
+  let progressPct = null;
+  let progressLabel = '';
+  if (dueDate && r.lastReplaced) {
+    const startMs  = new Date(r.lastReplaced + 'T12:00:00').getTime();
+    const endMs    = dueDate.getTime();
+    const nowMs    = now.getTime();
+    progressPct    = Math.min(100, Math.max(0, Math.round(((nowMs - startMs) / (endMs - startMs)) * 100)));
+    const daysLeft = getReminderDaysUntil(r);
+    progressLabel  = daysLeft === null ? '' : daysLeft < 0 ? `${Math.abs(daysLeft)}d overdue` : daysLeft === 0 ? 'Due today' : `${daysLeft}d remaining`;
+  }
+
+  // ── Render ───────────────────────────────
+  const statusColor = status === 'overdue' ? '#e85050' : status === 'soon' ? '#e8a838' : '#4cbb8a';
+
+  let html = '';
+
+  if (!r.lastReplaced) {
+    html = `<div style="text-align:center;padding:32px 16px;color:var(--muted)">
+      <div style="font-size:36px;margin-bottom:12px">📅</div>
+      <div style="font-size:14px;font-weight:600;color:var(--text);margin-bottom:6px">No start date recorded</div>
+      <div style="font-size:13px;line-height:1.6">Mark this as replaced to start tracking the timeline.</div>
+    </div>`;
+  } else {
+    // Progress bar for current period
+    if (progressPct !== null) {
+      const barColor = status === 'overdue' ? '#e85050' : status === 'soon' ? '#e8a838' : '#4cbb8a';
+      html += `<div style="margin-bottom:20px">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--muted);font-family:var(--mono);margin-bottom:6px">
+          <span>${r.lastReplacedIsFallback ? 'First used' : 'Last replaced'}</span>
+          <span style="color:${barColor};font-weight:700">${progressLabel}</span>
+          <span>Due ${dueDate ? fmtDate(dueDate.toISOString().slice(0,10)) : '—'}</span>
+        </div>
+        <div style="height:10px;background:var(--surface2);border-radius:99px;overflow:hidden;position:relative">
+          <div style="height:100%;width:${progressPct}%;background:${barColor};border-radius:99px;transition:width 0.6s"></div>
+          ${progressPct >= 100 ? '' : `<div style="position:absolute;top:0;left:${progressPct}%;transform:translateX(-50%);width:2px;height:100%;background:${barColor};opacity:0.6"></div>`}
+        </div>
+        <div style="font-size:11px;color:var(--muted);text-align:center;margin-top:4px;font-family:var(--mono)">${progressPct}% through current cycle</div>
+      </div>`;
+    }
+
+    // Timeline nodes
+    if (nodes.length) {
+      html += `<div style="position:relative;padding:8px 0 8px 20px">`;
+
+      // Vertical line
+      html += `<div style="position:absolute;left:20px;top:20px;bottom:20px;width:2px;background:linear-gradient(to bottom,var(--surface2),var(--border),var(--surface2));border-radius:2px"></div>`;
+
+      nodes.forEach((node, idx) => {
+        const isPast    = node.type === 'past';
+        const isAnchor  = node.type === 'anchor';
+        const isOverdue = node.type === 'overdue';
+        const isNext    = node.type === 'next';
+        const isReorder = node.type === 'reorder';
+        const isFuture  = node.type === 'future';
+
+        const dotColor  = isOverdue ? '#e85050'
+          : isNext    ? statusColor
+          : isReorder ? '#e8a838'
+          : isAnchor  ? '#5b8dee'
+          : isPast    ? 'var(--border)'
+          : 'var(--surface2)';
+
+        const dotBorder = isNext || isReorder || isOverdue
+          ? `3px solid ${dotColor}`
+          : `2px solid ${dotColor}`;
+
+        const dotSize   = isNext || isReorder ? '16px' : isAnchor ? '14px' : '10px';
+        const dotBg     = isPast || isFuture ? 'var(--bg)' : isAnchor ? '#5b8dee' : isOverdue ? '#e85050' : isNext ? statusColor : '#e8a838';
+
+        const nameColor = isOverdue ? '#e85050' : isNext ? statusColor : isReorder ? '#e8a838' : isAnchor ? '#5b8dee' : isPast ? 'var(--muted)' : 'var(--muted)';
+        const fontWeight = isNext || isReorder || isAnchor ? '700' : '400';
+
+        const isToday   = node.date.toISOString().slice(0,10) === today;
+        const dateStr   = isToday ? 'Today' : fmtDate(node.date.toISOString().slice(0,10));
+        const relStr    = isToday ? '' : (() => {
+          const diff = Math.round((node.date - now) / 86400000);
+          if (diff < 0) return `${Math.abs(diff)}d ago`;
+          if (diff === 0) return 'today';
+          return `in ${diff}d`;
+        })();
+
+        const icon = isReorder ? '🛒' : isOverdue ? '⚠️' : isNext ? '🔔' : isAnchor ? '📌' : isPast ? '✅' : '○';
+        const chip = isReorder
+          ? `<span style="font-size:10px;font-weight:700;background:rgba(232,168,56,0.15);color:#e8a838;border:1px solid rgba(232,168,56,0.3);border-radius:99px;padding:1px 7px;font-family:var(--mono)">REORDER</span>`
+          : isNext
+          ? `<span style="font-size:10px;font-weight:700;background:rgba(76,187,138,0.15);color:${statusColor};border:1px solid rgba(76,187,138,0.3);border-radius:99px;padding:1px 7px;font-family:var(--mono)">NEXT</span>`
+          : isOverdue
+          ? `<span style="font-size:10px;font-weight:700;background:rgba(232,80,80,0.15);color:#e85050;border:1px solid rgba(232,80,80,0.3);border-radius:99px;padding:1px 7px;font-family:var(--mono)">OVERDUE</span>`
+          : '';
+
+        html += `<div style="display:flex;align-items:flex-start;gap:14px;margin-bottom:${idx < nodes.length-1 ? '18' : '4'}px;position:relative">
+          <div style="flex-shrink:0;width:${dotSize};height:${dotSize};border-radius:50%;background:${dotBg};border:${dotBorder};margin-top:3px;position:relative;z-index:1;margin-left:calc(-${dotSize}/2 + 1px)"></div>
+          <div style="flex:1;min-width:0;padding-bottom:4px">
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+              <span style="font-size:14px;font-weight:${fontWeight};color:${nameColor}">${icon} ${esc(node.label)}</span>
+              ${chip}
+            </div>
+            <div style="font-size:12px;color:var(--muted);font-family:var(--mono);margin-top:2px">
+              ${dateStr}${relStr ? ` <span style="opacity:0.6">· ${relStr}</span>` : ''}
+            </div>
+          </div>
+        </div>`;
+      });
+
+      html += `</div>`;
+    }
+
+    // Summary row
+    const nextReplaceDate = dueDate ? fmtDate(dueDate.toISOString().slice(0,10)) : '—';
+    const reorderNode = nodes.find(n => n.type === 'reorder');
+    const reorderDateStr = reorderNode ? fmtDate(reorderNode.date.toISOString().slice(0,10)) : null;
+    html += `<div style="margin-top:16px;padding:12px 14px;background:var(--surface2);border-radius:10px;border:1px solid var(--border);font-size:12px;font-family:var(--mono);line-height:2;color:var(--muted)">
+      <div>🔔 <span style="color:var(--text)">Next replacement:</span> ${nextReplaceDate}</div>
+      ${reorderDateStr ? `<div>🛒 <span style="color:var(--text)">Reorder by:</span> <span style="color:#e8a838">${reorderDateStr}</span></div>` : ''}
+      <div>↻ <span style="color:var(--text)">Cycle:</span> every ${r.interval} ${r.unit} (${Math.round(intervalDays)} days)</div>
+    </div>`;
+  }
+
+  document.getElementById('rtl-body').innerHTML = html;
+  openModal('reminder-timeline-modal');
 }
 
 function updateRemindersBadge(count) {
@@ -4858,14 +5195,95 @@ function resetAllFilters() {
 }
 
 
+function reconcileFilters() {
+  const threshold = settings.threshold;
+  const nonQuick  = items.filter(i => !i.quickAdded);
+
+  // Helper: count items passing all current filters except the one being tested
+  const anyMatch = (testFn) => nonQuick.some(item => {
+    const s      = calcStock(item);
+    const status = getStatus(s?.pct ?? null, threshold);
+    return testFn(item, status);
+  });
+
+  let changed = false;
+
+  // Status filter stale?
+  if (activeFilter !== 'all') {
+    const stillHas = anyMatch((item, status) => status === activeFilter);
+    if (!stillHas) {
+      activeFilter = 'all';
+      // Reset status chip UI
+      document.querySelectorAll('#filter-bar .filter-chip').forEach(c => {
+        const txt = c.textContent.trim();
+        if (txt === 'All' || txt.includes('All')) c.classList.add('active');
+        else c.classList.remove('active');
+      });
+      changed = true;
+    }
+  }
+
+  // Cadence filter stale?
+  if (activeCadence !== 'all') {
+    const stillHas = anyMatch((item) => item.cadence === activeCadence);
+    if (!stillHas) {
+      activeCadence = 'all';
+      document.querySelectorAll('#filter-bar .filter-chip').forEach(c => {
+        if (c.textContent.includes('Monthly') || c.textContent.includes('Bulk')) c.classList.remove('active');
+      });
+      changed = true;
+    }
+  }
+
+  // Store filter stale?
+  if (activeStore !== 'all') {
+    const allStores = new Set();
+    nonQuick.forEach(item => {
+      if (item.store?.trim()) allStores.add(item.store.trim());
+      (item.logs||[]).forEach(l => { if (l.store?.trim()) allStores.add(l.store.trim()); });
+    });
+    if (!allStores.has(activeStore)) {
+      activeStore = 'all';
+      changed = true;
+    }
+  }
+
+  // Rating filter stale?
+  if (activeRating !== 0) {
+    const stillHas = activeRating === -1
+      ? anyMatch(item => !item.rating)
+      : anyMatch(item => item.rating === activeRating);
+    if (!stillHas) {
+      activeRating = 0;
+      document.querySelectorAll('#rating-filter-bar .filter-chip').forEach(c => c.classList.remove('active'));
+      const allRatingBtn = document.querySelector('#rating-filter-bar .filter-chip');
+      if (allRatingBtn) allRatingBtn.classList.add('active');
+      changed = true;
+    }
+  }
+
+  // Tag filter stale?
+  if (activeTagFilter !== null) {
+    const stillHas = anyMatch(item => (item.tags||[]).includes(activeTagFilter));
+    if (!stillHas) {
+      activeTagFilter = null;
+      changed = true;
+    }
+  }
+
+  if (changed) updateFilterBadge();
+}
+
 function renderAll() {
   document.getElementById('item-count').textContent = items.length + ' item' + (items.length!==1?'s':'');
   buildStoreFilterBar();
   buildTagFilterBar();
   buildShoppingTagFilterBarInline();
   renderHealthDashboard();
+  renderPendingDeliveries();
   renderIncompleteSection();
   updateSnSBanner();
+  reconcileFilters();
   renderGrid();
   // sync settings UI
   document.getElementById('setting-threshold').value = settings.threshold;
@@ -5036,7 +5454,19 @@ function cardHTML(item, threshold) {
     ${item.notes ? `<div class="card-notes">💬 ${esc(item.notes)}</div>` : ''}
     ${storePricesCardHTML(item)}
     ${item.url ? `<a class="card-link" href="${esc(item.url)}" target="_blank" rel="noopener">🛒 Buy now ↗</a>` : ''}
-    <button class="btn btn-ghost btn-sm log-btn" onclick="openLogModal('${item.id}')">+ Log Purchase</button>
+    ${item.logs?.some(l => l.pendingDelivery) && !item.startedUsing
+      ? `<div style="font-size:12px;color:var(--warn);background:rgba(232,168,56,0.1);border:1px solid rgba(232,168,56,0.25);border-radius:8px;padding:8px 12px;margin-top:8px;display:flex;align-items:center;justify-content:space-between;gap:8px">
+           <span>⏳ When did you start using this?</span>
+           <button class="btn btn-sm" style="background:rgba(232,168,56,0.2);color:var(--warn);border:none;font-size:12px" onclick="openStartedUsingModal('${item.id}')">Set date</button>
+         </div>`
+      : ''}
+    <div style="display:flex;gap:6px;margin-top:10px">
+      <button class="btn btn-ghost btn-sm log-btn" style="flex:1" onclick="openLogPurchaseModal('${item.id}')">📋 Log Purchase</button>
+      ${item.ordered
+        ? `<button class="btn btn-sm log-btn" style="flex:1;background:rgba(76,187,138,0.15);color:var(--ok);border:1px solid rgba(76,187,138,0.3)" onclick="openDeliveredModal('${item.id}')">📦 Delivered</button>`
+        : `<button class="btn btn-ghost btn-sm log-btn" style="flex:1;color:var(--muted)" onclick="openDeliveredModal('${item.id}')">📦 Delivered</button>`
+      }
+    </div>
   </div>`;
 }
 
@@ -5561,6 +5991,7 @@ function autoFillStore() {
 function renderReport() {
   const threshold = settings.threshold;
   document.getElementById('report-date').textContent = 'Generated: ' + new Date().toLocaleDateString('en-GB',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
+  renderPendingDeliveries();
 
   const groups = { critical:[], warn:[], ok:[], nodata:[] };
   items.forEach(item => {
@@ -6288,6 +6719,53 @@ let shoppingStores = new Set(['__all__']);
 let shoppingDays = 30;
 let shoppingTagFilter = null; // null = all tags
 
+function updateStockShoppingHeader(mode) {
+  const stockBtn    = document.getElementById('hdr-stock-btn');
+  const shoppingBtn = document.getElementById('hdr-shopping-btn');
+  const toggle      = document.getElementById('days-toggle');
+  const countEl     = document.getElementById('item-count');
+  if (mode === 'stock') {
+    if (stockBtn)    { stockBtn.style.fontWeight = '700'; stockBtn.style.color = 'var(--text)'; }
+    if (shoppingBtn) { shoppingBtn.style.fontWeight = '400'; shoppingBtn.style.color = 'var(--muted)'; }
+    if (toggle)      toggle.style.display = 'none';
+    if (countEl)     countEl.style.display = '';
+  } else {
+    if (stockBtn)    { stockBtn.style.fontWeight = '400'; stockBtn.style.color = 'var(--muted)'; }
+    if (shoppingBtn) { shoppingBtn.style.fontWeight = '700'; shoppingBtn.style.color = 'var(--text)'; }
+    if (toggle)      toggle.style.display = '';
+    if (countEl)     countEl.style.display = 'none';
+  }
+}
+
+function switchToStock() {
+  // Ensure view-stock is the active view
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('view-stock').classList.add('active');
+  const stockTab = [...document.querySelectorAll('.tab')].find(t => t.textContent.includes('Stockroom'));
+  if (stockTab) stockTab.classList.add('active');
+  // Swap inner panels
+  document.getElementById('items-grid').style.display = '';
+  document.getElementById('shopping-panel').style.display = 'none';
+  updateStockShoppingHeader('stock');
+}
+
+function switchToShopping() {
+  // Keep view-stock active (shopping is a sub-panel inside it)
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('view-stock').classList.add('active');
+  const stockTab = [...document.querySelectorAll('.tab')].find(t => t.textContent.includes('Stockroom'));
+  if (stockTab) stockTab.classList.add('active');
+  // Swap inner panels
+  document.getElementById('items-grid').style.display = 'none';
+  document.getElementById('shopping-panel').style.display = '';
+  renderShoppingList();
+  updateStockShoppingHeader('shopping');
+}
+
+function showShoppingListInline() { switchToShopping(); } // compat alias
+
 function showView(name, btn) {
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -6295,9 +6773,11 @@ function showView(name, btn) {
   btn.classList.add('active');
   if (name === 'report')    { renderReport(); if (spendVisible) renderSpendChart(); }
   if (name === 'reminders') renderReminders();
-  if (name === 'shopping') renderShoppingList();
-  if (name === 'savings')  renderSavingsView();
-  if (name === 'grocery')  renderGrocery();
+  if (name === 'shopping')  renderShoppingList();
+  if (name === 'savings')   renderSavingsView();
+  if (name === 'grocery')   renderGrocery();
+  // Reset shared header to stock mode whenever a tab (not the inline link) is clicked
+  if (name === 'stock') updateStockShoppingHeader('stock');
 }
 
 function getShoppingItems() {
@@ -6419,12 +6899,7 @@ function toggleShoppingDays() {
 
 function applyShoppingList() {
   closeModal('store-picker-modal');
-  renderShoppingList();
-  // Switch to shopping view if not already there
-  const tab = [...document.querySelectorAll('.tab')].find(t => t.textContent.includes('Shopping'));
-  if (tab) { document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active')); tab.classList.add('active'); }
-  document.querySelectorAll('.view').forEach(v=>v.classList.remove('active'));
-  document.getElementById('view-shopping').classList.add('active');
+  showShoppingListInline();
 }
 
 function renderShoppingList() {
@@ -6509,7 +6984,7 @@ function renderShoppingList() {
               ? `<button class="btn btn-ghost btn-sm" style="font-size:12px;color:#5b8dee;border-color:#5b8dee" onclick="markOrdered('${item.id}')">📦 Mark ordered</button>`
               : `<button class="btn btn-ghost btn-sm" style="font-size:12px;color:var(--muted)" onclick="unmarkOrdered('${item.id}')">↩ Unmark</button>`
             }
-            <button class="btn btn-ghost btn-sm" style="font-size:12px;color:var(--ok);border-color:var(--ok)" onclick="quickLogFromShopping('${item.id}')">✓ Bought</button>
+            <button class="btn btn-ghost btn-sm" style="font-size:12px;color:var(--ok);border-color:var(--ok)" onclick="openDeliveredModal('${item.id}')">📦 Delivered</button>
           </div>
         </div>
         <input type="checkbox" class="shopping-checkbox" title="Mark as bought" onchange="toggleShoppingCheck('${item.id}',this)">
@@ -6662,17 +7137,17 @@ function openEditModal(id) {
   openModal('item-modal');
 }
 
-function openLogModal(id) {
+function openLogModal(id) { openLogPurchaseModal(id); } // backward compat for swipe + shopping list
+
+function openLogPurchaseModal(id) {
   loggingId = id;
   const item = items.find(i => i.id === id);
   if (!item) return;
   document.getElementById('log-modal-title').textContent = 'Log Purchase — ' + item.name;
-  document.getElementById('log-date').value = today();
-  document.getElementById('log-qty').value = item.qty||1;
+  document.getElementById('log-date').value  = today();
+  document.getElementById('log-qty').value   = item.qty || 1;
   document.getElementById('log-price').value = '';
   document.getElementById('log-store').value = item.store || urlToStoreName(item.url||'') || '';
-  document.getElementById('log-started-using').value = '';
-
   renderLogHistory(item);
   openModal('log-modal');
 }
@@ -6762,32 +7237,190 @@ function saveLog() {
   if (!item) return;
   if (!item.logs) item.logs = [];
   item.logs.push({
-    id:    uid(),
-    date:  document.getElementById('log-date').value,
-    qty:   parseFloat(document.getElementById('log-qty').value)||1,
-    price: document.getElementById('log-price').value.trim(),
-    store: document.getElementById('log-store').value.trim()
+    id:             uid(),
+    date:           document.getElementById('log-date').value,
+    qty:            parseFloat(document.getElementById('log-qty').value)||1,
+    price:          document.getElementById('log-price').value.trim(),
+    store:          document.getElementById('log-store').value.trim(),
+    pendingDelivery: true,
   });
   item.logs.sort((a,b) => new Date(a.date) - new Date(b.date));
-  // Update startedUsing if a new date was provided
-  const su = document.getElementById('log-started-using').value;
-  if (su) item.startedUsing = su;
-  // Clear ordered flag — they've received and logged it
-  item.ordered   = false;
-  item.orderedAt = null;
+  // Mark as ordered
+  item.ordered   = true;
+  item.orderedAt = new Date().toISOString();
   touchItem(item);
   saveData();
   closeModal('log-modal');
   renderAll();
-  toast('Purchase logged ✓');
   setTimeout(syncAll, 400);
-  // If opened from shopping list, switch back to it
-  const returnView = sessionStorage.getItem('log_return_view');
-  if (returnView) {
-    sessionStorage.removeItem('log_return_view');
-    const tab = [...document.querySelectorAll('.tab')].find(t => t.textContent.includes('Shopping'));
-    if (tab) showView('shopping', tab);
+
+  // If triggered from "Delivered" button with no prior log, go straight to delivered modal
+  const logThenDeliver = sessionStorage.getItem('log_then_deliver');
+  if (logThenDeliver && logThenDeliver === loggingId) {
+    sessionStorage.removeItem('log_then_deliver');
+    setTimeout(() => openDeliveredModal(loggingId), 200);
+  } else {
+    toast('Purchase logged — tap Delivered when it arrives ✓');
   }
+}
+
+// ── Delivered flow ─────────────────────────────────────────
+let deliveringId = null;
+
+function openDeliveredModal(id) {
+  const item = items.find(i => i.id === id);
+  if (!item) return;
+
+  // If no pending purchase log exists, route through log purchase first
+  const hasPendingLog = item.logs?.some(l => l.pendingDelivery);
+  if (!hasPendingLog) {
+    sessionStorage.setItem('log_then_deliver', id);
+    openLogPurchaseModal(id);
+    // Tweak the log modal to signal this is a combined flow
+    setTimeout(() => {
+      const title = document.getElementById('log-modal-title');
+      if (title) title.textContent = '📦 Purchase Details — ' + item.name;
+      const sub = document.querySelector('#log-modal .subtitle');
+      if (sub) sub.textContent = 'Enter the purchase details then we\'ll confirm delivery.';
+      const saveBtn = document.querySelector('#log-modal .btn-primary');
+      if (saveBtn) { saveBtn.textContent = 'Next — Confirm Delivery →'; saveBtn.style.background = 'var(--ok)'; }
+    }, 30);
+    return;
+  }
+
+  deliveringId = id;
+  document.getElementById('delivered-modal-title').textContent = `📦 Delivered — ${item.name}`;
+  document.getElementById('delivered-date').value = today();
+  const pendingLog = [...(item.logs||[])].reverse().find(l => l.pendingDelivery);
+  document.getElementById('delivered-qty').value = pendingLog?.qty || item.qty || 1;
+  document.getElementById('delivered-started-now').checked = false;
+  document.getElementById('delivered-started-row').style.display = 'none';
+  document.getElementById('delivered-started-hint').style.display = 'block';
+  document.getElementById('delivered-started-date').value = today();
+  openModal('delivered-modal');
+}
+
+function toggleDeliveredStarted() {
+  const checked = document.getElementById('delivered-started-now').checked;
+  document.getElementById('delivered-started-row').style.display = checked ? 'block' : 'none';
+  document.getElementById('delivered-started-hint').style.display = checked ? 'none' : 'block';
+}
+
+function saveDelivered() {
+  const item = items.find(i => i.id === deliveringId);
+  if (!item) return;
+
+  const deliveryDate  = document.getElementById('delivered-date').value || today();
+  const qty           = parseFloat(document.getElementById('delivered-qty').value) || 1;
+  const startedNow    = document.getElementById('delivered-started-now').checked;
+  const startedDate   = startedNow ? (document.getElementById('delivered-started-date').value || deliveryDate) : null;
+
+  if (!item.logs) item.logs = [];
+
+  // Find and update the most recent pending log, or create a new delivered log
+  const pendingIdx = [...item.logs].map((l,i)=>({l,i})).reverse().find(({l})=>l.pendingDelivery)?.i;
+  if (pendingIdx !== undefined) {
+    item.logs[pendingIdx].pendingDelivery = false;
+    item.logs[pendingIdx].deliveredDate   = deliveryDate;
+    item.logs[pendingIdx].qty             = qty;
+  } else {
+    item.logs.push({ id: uid(), date: deliveryDate, qty, pendingDelivery: false, deliveredDate });
+    item.logs.sort((a,b) => new Date(a.date) - new Date(b.date));
+  }
+
+  // Clear ordered flag
+  item.ordered   = false;
+  item.orderedAt = null;
+
+  // Set startedUsing if user said they're starting now
+  if (startedDate) item.startedUsing = startedDate;
+
+  touchItem(item);
+  saveData();
+  closeModal('delivered-modal');
+  renderAll();
+  setTimeout(syncAll, 400);
+
+  // Offer reminder setup
+  openDeliveryReminderModal(deliveringId, !startedDate);
+}
+
+// ── Post-delivery reminder modal ───────────────────────────
+let deliveryReminderItemId = null;
+let deliveryNeedsStartDate = false;
+
+function openDeliveryReminderModal(id, needsStartDate) {
+  const item = items.find(i => i.id === id);
+  if (!item) return;
+  deliveryReminderItemId = id;
+  deliveryNeedsStartDate = needsStartDate;
+
+  document.getElementById('delivery-reminder-subtitle').textContent =
+    needsStartDate
+      ? `Come back and set a "started using" date to keep calculations accurate.`
+      : `Do you want a reminder when it's time to replace this?`;
+
+  const hasReminder = item.replacementInterval;
+  const body = document.getElementById('delivery-reminder-body');
+  body.innerHTML = `
+    ${needsStartDate ? `
+      <div style="background:rgba(232,168,56,0.1);border:1px solid rgba(232,168,56,0.25);border-radius:10px;padding:12px 14px;margin-bottom:16px;font-size:13px;color:var(--warn);line-height:1.5">
+        ⏳ When you open the first pack, tap <strong>"Set date"</strong> on the card — it anchors the stock clock and any reminders to the right start point.
+      </div>` : ''}
+    <div style="margin-bottom:14px">
+      <label class="form-label">Replace every</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <input class="form-input" id="dr-interval" type="number" min="1" max="365" value="${item.replacementInterval||3}" style="width:80px">
+        <select class="form-input" id="dr-unit" style="flex:1">
+          <option value="days"   ${(item.replacementUnit||'months')==='days'   ?'selected':''}>days</option>
+          <option value="weeks"  ${(item.replacementUnit||'months')==='weeks'  ?'selected':''}>weeks</option>
+          <option value="months" ${(item.replacementUnit||'months')==='months' ?'selected':''}>months</option>
+        </select>
+      </div>
+    </div>
+    ${!hasReminder ? `<p style="font-size:12px;color:var(--muted)">You can also set this later via ✏️ Edit on the item.</p>` : ''}
+  `;
+  openModal('delivery-reminder-modal');
+}
+
+function saveDeliveryReminder() {
+  const item = items.find(i => i.id === deliveryReminderItemId);
+  if (!item) return;
+  const interval = parseInt(document.getElementById('dr-interval').value) || 3;
+  const unit     = document.getElementById('dr-unit').value || 'months';
+  item.replacementInterval = interval;
+  item.replacementUnit     = unit;
+  touchItem(item);
+  saveData();
+  closeModal('delivery-reminder-modal');
+  renderAll();
+  setTimeout(syncAll, 400);
+  toast(`🔔 Reminder set: every ${interval} ${unit}`);
+}
+
+// ── Started using modal ────────────────────────────────────
+let startedUsingItemId = null;
+
+function openStartedUsingModal(id) {
+  startedUsingItemId = id;
+  const item = items.find(i => i.id === id);
+  if (!item) return;
+  document.getElementById('started-using-title').textContent = `📅 ${item.name} — when did you start using it?`;
+  document.getElementById('started-using-date').value = today();
+  openModal('started-using-modal');
+}
+
+function saveStartedUsing() {
+  const item = items.find(i => i.id === startedUsingItemId);
+  if (!item) return;
+  const date = document.getElementById('started-using-date').value || today();
+  item.startedUsing = date;
+  touchItem(item);
+  saveData();
+  closeModal('started-using-modal');
+  renderAll();
+  setTimeout(syncAll, 400);
+  toast('Start date saved — stock clock updated ✓');
 }
 
 function deleteItem(id) {
@@ -7168,7 +7801,10 @@ async function syncNow() {
         const metaData = await meta.json();
         driveFileId = metaData.id;
         try { localStorage.setItem('stockroom_drive', JSON.stringify({ driveFileId, driveConnected })); } catch(e){}
-        await uploadToDrive(JSON.stringify({ items, settings, lastSynced: new Date().toISOString() }));
+        await uploadToDrive(JSON.stringify({
+          items, settings, lastSynced: new Date().toISOString(),
+          groceries: groceryItems, departments: groceryDepts, reminders,
+        }));
         updateSyncPill('synced');
         return;
       }
@@ -7203,13 +7839,41 @@ async function syncNow() {
         settings.customTags = localDefined >= remoteDefined ? (localTags||[]) : remoteTags;
         try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e){}
       }
+
+      // Merge groceries — remote wins if newer overall, otherwise keep local if longer
+      if (remote.groceries) {
+        const localG  = groceryItems;
+        const remoteG = remote.groceries;
+        if (remoteWins || remoteG.length > localG.length) {
+          groceryItems = remoteG;
+          saveGrocery();
+        }
+      }
+      if (remote.departments && remote.departments.length) {
+        const localD = groceryDepts;
+        if (remoteWins || remote.departments.length > localD.length) {
+          groceryDepts = remote.departments;
+          saveGroceryDepts();
+        }
+      }
+      // Merge reminders — remote wins if newer
+      if (remote.reminders && Array.isArray(remote.reminders)) {
+        if (remoteWins || remote.reminders.length > reminders.length) {
+          reminders = remote.reminders;
+          saveReminders();
+        }
+      }
+
       renderAll();
     }
 
     // ── Step 3: Upload merged data back ──
     settings.lastSynced = new Date().toISOString();
     try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e){}
-    await uploadToDrive(JSON.stringify({ items, settings, lastSynced: settings.lastSynced }));
+    await uploadToDrive(JSON.stringify({
+      items, settings, lastSynced: settings.lastSynced,
+      groceries: groceryItems, departments: groceryDepts, reminders,
+    }));
     updateSyncPill('synced');
 
   } catch(err) {
@@ -7319,6 +7983,26 @@ async function syncDropbox() {
           settings.customTags = localDefined >= remoteDefined ? (localTags||[]) : remoteTags;
           try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e){}
         }
+        if (remote.groceries) {
+          const localG  = groceryItems;
+          const remoteG = remote.groceries;
+          if (remoteWins || remoteG.length > localG.length) {
+            groceryItems = remoteG;
+            saveGrocery();
+          }
+        }
+        if (remote.departments && remote.departments.length) {
+          if (remoteWins || remote.departments.length > groceryDepts.length) {
+            groceryDepts = remote.departments;
+            saveGroceryDepts();
+          }
+        }
+        if (remote.reminders && Array.isArray(remote.reminders)) {
+          if (remoteWins || remote.reminders.length > reminders.length) {
+            reminders = remote.reminders;
+            saveReminders();
+          }
+        }
         renderAll();
       }
     }
@@ -7327,7 +8011,10 @@ async function syncDropbox() {
     // Stamp and upload merged data
     settings.lastSynced = new Date().toISOString();
     try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e){}
-    await uploadToDropbox(JSON.stringify({ items, settings, lastSynced: settings.lastSynced }));
+    await uploadToDropbox(JSON.stringify({
+      items, settings, lastSynced: settings.lastSynced,
+      groceries: groceryItems, departments: groceryDepts, reminders,
+    }));
     updateSyncPill('synced', 'dropbox');
 
   } catch(err) {
@@ -7592,6 +8279,7 @@ function loadGrocery() {
 
 function saveGrocery() {
   try { localStorage.setItem('stockroom_groceries', JSON.stringify(groceryItems)); } catch(e) {}
+  if (driveConnected || dropboxConnected) setTimeout(syncAll, 600);
 }
 
 function saveGroceryDepts() {
