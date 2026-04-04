@@ -2029,12 +2029,33 @@ function touchItem(item) {
 //   - If neither has updatedAt: remoteWins flag decides (based on which cloud file is newer)
 //   - If only one has updatedAt: that one wins
 // Items only in one set are always kept.
+// ── Deletion tombstones ───────────────────────────────────
+// Keeps a set of deleted item IDs so they survive cloud sync merges
+function loadDeletedIds() {
+  try { return new Set(JSON.parse(localStorage.getItem('stockroom_deleted_ids') || '[]')); } catch(e) { return new Set(); }
+}
+function saveDeletedIds(set) {
+  try { localStorage.setItem('stockroom_deleted_ids', JSON.stringify([...set])); } catch(e) {}
+}
+function addTombstone(id) {
+  const set = loadDeletedIds();
+  set.add(id);
+  saveDeletedIds(set);
+}
+function removeTombstone(id) {
+  const set = loadDeletedIds();
+  set.delete(id);
+  saveDeletedIds(set);
+}
+
 function mergeItems(local, remote, remoteWins = false) {
+  const deletedIds = loadDeletedIds();
   const merged = new Map();
   for (const item of local) {
-    merged.set(item.id, item);
+    if (!deletedIds.has(item.id)) merged.set(item.id, item);
   }
   for (const remoteItem of remote) {
+    if (deletedIds.has(remoteItem.id)) continue; // locally deleted — never restore
     const localItem = merged.get(remoteItem.id);
     if (!localItem) {
       merged.set(remoteItem.id, remoteItem);
@@ -2043,15 +2064,12 @@ function mergeItems(local, remote, remoteWins = false) {
       const remoteTime = remoteItem.updatedAt ? new Date(remoteItem.updatedAt).getTime() : null;
 
       if (localTime !== null && remoteTime !== null) {
-        // Both stamped — newest wins
         if (remoteTime > localTime) merged.set(remoteItem.id, remoteItem);
       } else if (remoteTime !== null && localTime === null) {
-        // Only remote is stamped — remote wins
         merged.set(remoteItem.id, remoteItem);
       } else if (localTime !== null && remoteTime === null) {
-        // Only local is stamped — local wins
+        // local wins
       } else {
-        // Neither stamped — use remoteWins flag from lastSynced comparison
         if (remoteWins) merged.set(remoteItem.id, remoteItem);
       }
     }
@@ -5080,6 +5098,7 @@ function deleteItem(id) {
   deletedItem  = item;
   deletedIndex = idx;
   items.splice(idx, 1);
+  addTombstone(id);
   saveData();
   renderAll();
   setTimeout(syncAll, 400);
@@ -5102,7 +5121,8 @@ function undoDelete() {
   const t = document.getElementById('undo-toast');
   if (t) t.classList.remove('show');
   if (!deletedItem) return;
-  // Re-insert at original position
+  // Remove tombstone so the item can come back
+  removeTombstone(deletedItem.id);
   items.splice(deletedIndex, 0, deletedItem);
   deletedItem  = null;
   deletedIndex = null;
@@ -7517,9 +7537,12 @@ function deleteItem(id) {
   const item = items.find(i => i.id === id);
   if (!item || !confirm('Remove "' + item.name + '" from your stockroom?')) return;
   items = items.filter(i => i.id !== id);
+  addTombstone(id);
   saveData();
+  closeModal('item-modal');
   renderAll();
   toast('Item removed');
+  setTimeout(syncAll, 400);
 }
 
 // ═══════════════════════════════════════════
@@ -7905,7 +7928,7 @@ async function syncNow() {
         try { localStorage.setItem('stockroom_drive', JSON.stringify({ driveFileId, driveConnected })); } catch(e){}
         await uploadToDrive(JSON.stringify({
           items, settings, lastSynced: new Date().toISOString(),
-          groceries: groceryItems, departments: groceryDepts, reminders,
+          groceries: groceryItems, departments: groceryDepts, reminders, deletedIds: [...loadDeletedIds()],
         }));
         updateSyncPill('synced');
         return;
@@ -7965,6 +7988,12 @@ async function syncNow() {
           saveReminders();
         }
       }
+      // Merge remote tombstones — union of local + remote deleted IDs
+      if (remote.deletedIds && Array.isArray(remote.deletedIds)) {
+        const merged = loadDeletedIds();
+        remote.deletedIds.forEach(id => merged.add(id));
+        saveDeletedIds(merged);
+      }
 
       renderAll();
     }
@@ -7972,9 +8001,14 @@ async function syncNow() {
     // ── Step 3: Upload merged data back ──
     settings.lastSynced = new Date().toISOString();
     try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e){}
+    const uploadedIds = new Set(items.map(i => i.id));
+    // Prune tombstones whose IDs are no longer in the cloud item list — deletion is confirmed
+    const remainingTombstones = loadDeletedIds();
+    remainingTombstones.forEach(id => { if (!uploadedIds.has(id)) remainingTombstones.delete(id); });
+    saveDeletedIds(remainingTombstones);
     await uploadToDrive(JSON.stringify({
       items, settings, lastSynced: settings.lastSynced,
-      groceries: groceryItems, departments: groceryDepts, reminders,
+      groceries: groceryItems, departments: groceryDepts, reminders, deletedIds: [...remainingTombstones],
     }));
     updateSyncPill('synced');
 
@@ -8105,6 +8139,11 @@ async function syncDropbox() {
             saveReminders();
           }
         }
+        if (remote.deletedIds && Array.isArray(remote.deletedIds)) {
+          const merged = loadDeletedIds();
+          remote.deletedIds.forEach(id => merged.add(id));
+          saveDeletedIds(merged);
+        }
         renderAll();
       }
     }
@@ -8113,9 +8152,13 @@ async function syncDropbox() {
     // Stamp and upload merged data
     settings.lastSynced = new Date().toISOString();
     try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e){}
+    const uploadedIdsDb = new Set(items.map(i => i.id));
+    const remainingTombstonesDb = loadDeletedIds();
+    remainingTombstonesDb.forEach(id => { if (!uploadedIdsDb.has(id)) remainingTombstonesDb.delete(id); });
+    saveDeletedIds(remainingTombstonesDb);
     await uploadToDropbox(JSON.stringify({
       items, settings, lastSynced: settings.lastSynced,
-      groceries: groceryItems, departments: groceryDepts, reminders,
+      groceries: groceryItems, departments: groceryDepts, reminders, deletedIds: [...remainingTombstonesDb],
     }));
     updateSyncPill('synced', 'dropbox');
 
