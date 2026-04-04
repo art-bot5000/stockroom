@@ -5229,6 +5229,15 @@ function toggleFilters() {
   const icon  = document.getElementById('filter-toggle-icon');
   panel.style.display = filtersOpen ? 'flex' : 'none';
   icon.textContent = filtersOpen ? '▾' : '▸';
+  try { localStorage.setItem('stockroom_filters_open', filtersOpen ? '1' : ''); } catch(e) {}
+}
+
+function loadFilterPanelState() {
+  filtersOpen = !!localStorage.getItem('stockroom_filters_open');
+  const panel = document.getElementById('filter-panel');
+  const icon  = document.getElementById('filter-toggle-icon');
+  if (panel) panel.style.display = filtersOpen ? 'flex' : 'none';
+  if (icon)  icon.textContent    = filtersOpen ? '▾' : '▸';
 }
 
 function updateFilterBadge() {
@@ -8001,10 +8010,10 @@ async function syncNow() {
     // ── Step 3: Upload merged data back ──
     settings.lastSynced = new Date().toISOString();
     try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e){}
+    // Prune tombstones only for IDs that are back in the live item list (i.e. restored via undo)
     const uploadedIds = new Set(items.map(i => i.id));
-    // Prune tombstones whose IDs are no longer in the cloud item list — deletion is confirmed
     const remainingTombstones = loadDeletedIds();
-    remainingTombstones.forEach(id => { if (!uploadedIds.has(id)) remainingTombstones.delete(id); });
+    remainingTombstones.forEach(id => { if (uploadedIds.has(id)) remainingTombstones.delete(id); });
     saveDeletedIds(remainingTombstones);
     await uploadToDrive(JSON.stringify({
       items, settings, lastSynced: settings.lastSynced,
@@ -8154,7 +8163,7 @@ async function syncDropbox() {
     try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e){}
     const uploadedIdsDb = new Set(items.map(i => i.id));
     const remainingTombstonesDb = loadDeletedIds();
-    remainingTombstonesDb.forEach(id => { if (!uploadedIdsDb.has(id)) remainingTombstonesDb.delete(id); });
+    remainingTombstonesDb.forEach(id => { if (uploadedIdsDb.has(id)) remainingTombstonesDb.delete(id); });
     saveDeletedIds(remainingTombstonesDb);
     await uploadToDropbox(JSON.stringify({
       items, settings, lastSynced: settings.lastSynced,
@@ -8892,6 +8901,7 @@ function init() {
 
   updateSyncUI();
   loadCompactView();
+  loadFilterPanelState();
   // Init profiles — migrate existing data into default profile if needed
   const profilesRaw = localStorage.getItem('stockroom_profiles');
   if (!profilesRaw) {
