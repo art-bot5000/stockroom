@@ -9355,7 +9355,18 @@ function initHouseholdSettingsUI() {
 }
 
 // ── User ID ───────────────────────────────────────────────
-function getHouseholdUserId() {
+async function getHouseholdUserId() {
+  // Prefer email-derived ID so all your devices appear as one presence entry.
+  // Falls back to a random per-device ID if no email is set.
+  const email = settings.email || '';
+  if (email) {
+    // Hash the email to a short stable ID — no raw email sent to backend
+    const msgBuffer = new TextEncoder().encode(email.toLowerCase().trim());
+    const hashBuffer = await crypto.subtle.digest('SHA-256', msgBuffer);
+    const hashArray = Array.from(new Uint8Array(hashBuffer));
+    return 'u_' + hashArray.slice(0, 6).map(b => b.toString(16).padStart(2,'0')).join('');
+  }
+  // No email — use or create a random per-device ID
   let id = localStorage.getItem('stockroom_user_id');
   if (!id) {
     id = 'u_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -9365,22 +9376,22 @@ function getHouseholdUserId() {
 }
 
 // ── SSE connection ────────────────────────────────────────
-function connectPresence() {
+async function connectPresence() {
   if (!WORKER_URL || !_householdEnabled) return;
   disconnectPresence(); // close any existing
 
-  const userId = getHouseholdUserId();
+  const userId = await getHouseholdUserId();
   const url    = `${WORKER_URL}/presence-stream?userId=${encodeURIComponent(userId)}`;
 
   try {
     _presenceSSE = new EventSource(url);
 
-    _presenceSSE.onmessage = e => {
+    _presenceSSE.onmessage = async e => {
       try {
         const data = JSON.parse(e.data);
         if (data.type === 'presence') {
           _otherPresence = {};
-          const myId = getHouseholdUserId();
+          const myId = await getHouseholdUserId();
           (data.users || []).forEach(u => {
             if (u.userId !== myId) _otherPresence[u.userId] = u;
           });
@@ -9428,7 +9439,7 @@ async function pushPresence() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        userId:   getHouseholdUserId(),
+        userId:   await getHouseholdUserId(),
         name,
         initials,
         colour:   _householdColour,
