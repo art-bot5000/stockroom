@@ -7230,6 +7230,7 @@ function setStockOnlyUI(visible) {
 }
 
 function switchToStock() {
+  _currentViewName = 'stock';
   _doTransition('back', () => {
     document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -7242,9 +7243,11 @@ function switchToStock() {
     updateStockShoppingHeader('stock');
     _currentView = 'stock';
   });
+  if (_householdEnabled) pushPresence();
 }
 
 function switchToShopping() {
+  _currentViewName = 'shopping';
   _doTransition('forward', () => {
     document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -7257,11 +7260,13 @@ function switchToShopping() {
     renderShoppingList();
     updateStockShoppingHeader('shopping');
   });
+  if (_householdEnabled) pushPresence();
 }
 
 function showShoppingListInline() { switchToShopping(); }
 
 function showView(name, btn) {
+  _currentViewName = name;
   // Tab switches are instant — no transition (feels snappier on the tab bar)
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -7279,6 +7284,7 @@ function showView(name, btn) {
     document.getElementById('shopping-panel').style.display = 'none';
   }
   _currentView = name;
+  if (_householdEnabled) pushPresence();
 }
 
 function getShoppingItems() {
@@ -8632,9 +8638,21 @@ async function signOutDropbox() {
 }
 
 // ── Unified sync: tries whichever provider is connected ──
+let _syncDebounceTimer = null;
 async function syncAll() {
-  if (driveConnected)   await syncNow();
-  if (dropboxConnected) await syncDropbox();
+  // Debounce — if called again within 2s, reset the timer.
+  // This prevents the sync pill flickering when multiple saves fire in quick succession.
+  if (_syncDebounceTimer) {
+    clearTimeout(_syncDebounceTimer);
+  }
+  return new Promise(resolve => {
+    _syncDebounceTimer = setTimeout(async () => {
+      _syncDebounceTimer = null;
+      if (driveConnected)   await syncNow();
+      if (dropboxConnected) await syncDropbox();
+      resolve();
+    }, 1200);
+  });
 }
 
 // ── Unified UI update for both providers ────────────────
@@ -9471,24 +9489,8 @@ function renderPresenceAvatars() {
 }
 
 // Hook into showView and switchTo* to push presence on navigation
-const _origShowView = showView;
-function showView(name, btn) {
-  _currentViewName = name;
-  _origShowView(name, btn);
-  if (_householdEnabled) pushPresence();
-}
-const _origSwitchToShopping = switchToShopping;
-function switchToShopping() {
-  _currentViewName = 'shopping';
-  _origSwitchToShopping();
-  if (_householdEnabled) pushPresence();
-}
-const _origSwitchToStock = switchToStock;
-function switchToStock() {
-  _currentViewName = 'stock';
-  _origSwitchToStock();
-  if (_householdEnabled) pushPresence();
-}
+// Note: we patch _currentViewName directly rather than wrapping functions,
+// since function re-declaration with hoisting causes infinite recursion.
 
 // ── Shopping list: show who else is viewing ───────────────
 function getShoppingPresenceBar() {
