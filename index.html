@@ -2108,7 +2108,7 @@ async function saveSettings() {
   await dbPut('settings', 'settings', settings);
   updateLastSentUI();
   pushScheduleToWorker();
-  renderAll();
+  scheduleRender('settings-ui', 'sns');
 }
 
 async function _saveSettings() {
@@ -2356,7 +2356,7 @@ async function wizardFinish() {
   localStorage.setItem('stockroom_country_set', '1');
   document.getElementById('wizard').style.display = 'none';
   document.getElementById('setting-country').value = settings.country;
-  renderAll();
+  scheduleRender(...RENDER_REGIONS);
   // Land on Stockroom
   const stockTab = [...document.querySelectorAll('.tab')].find(t => t.textContent.includes('Stockroom'));
   if (stockTab) showView('stock', stockTab);
@@ -2614,7 +2614,7 @@ async function handleUnsubscribe() {
       }).catch(() => {});
     }
 
-    renderAll();
+    scheduleRender('grid', 'dashboard', 'settings-ui');
     toast('Email reminders disabled ✓');
 
     // Scroll to email settings card so they can see it
@@ -3473,7 +3473,7 @@ async function addIncomingItem(payload, openEdit) {
   };
   items.push(newItem);
   await saveData();
-  renderAll();
+  scheduleRender('grid', 'dashboard', 'shopping');
   setTimeout(syncAll, 400);
   if (openEdit) {
     setTimeout(() => { openEditModal(newItem.id); enableItemEdit(); }, 300);
@@ -3710,7 +3710,7 @@ async function saveQuickAdd() {
 
   await saveData();
   closeModal('quick-add-modal');
-  renderAll();
+  scheduleRender('grid', 'dashboard', 'filters', 'shopping');
   setTimeout(syncAll, 400);
   toast(`${names.length} item${names.length !== 1 ? 's' : ''} added — complete their details when ready`);
 }
@@ -4548,7 +4548,7 @@ async function markOrdered(id) {
   item.orderedAt = new Date().toISOString();
   touchField(item, 'ordered','orderedAt');
   await saveData();
-  renderAll();
+  scheduleRender('grid', 'dashboard', 'shopping');
   setTimeout(syncAll, 400);
   toast(`📦 ${item.name} marked as ordered`);
 }
@@ -4560,7 +4560,7 @@ async function unmarkOrdered(id) {
   item.orderedAt = null;
   touchField(item, 'ordered','orderedAt');
   await saveData();
-  renderAll();
+  scheduleRender('grid', 'dashboard', 'shopping');
   setTimeout(syncAll, 400);
   toast('Removed ordered status');
 }
@@ -4622,7 +4622,7 @@ async function loadProfile(key) {
     await saveCurrentProfile();
   }
   updateProfileLabel();
-  renderAll();
+  scheduleRender(...RENDER_REGIONS);
   updateSyncUI();
 }
 
@@ -4917,7 +4917,7 @@ async function deleteLogEntry(itemId, logId) {
   await saveData();
   // Re-render the log history in place
   renderLogHistory(item);
-  renderAll();
+  scheduleRender('grid', 'dashboard');
   setTimeout(syncAll, 400);
 }
 
@@ -5321,7 +5321,7 @@ async function deleteItem(id) {
   items.splice(idx, 1);
   await addTombstone(id);
   await saveData();
-  renderAll();
+  scheduleRender('grid', 'dashboard', 'shopping');
   setTimeout(syncAll, 400);
 
   // Show undo toast
@@ -5348,7 +5348,7 @@ async function undoDelete() {
   deletedItem  = null;
   deletedIndex = null;
   await saveData();
-  renderAll();
+  scheduleRender('grid', 'dashboard', 'shopping');
   setTimeout(syncAll, 400);
   toast('Restored ✓');
 }
@@ -5603,30 +5603,84 @@ function reconcileFilters() {
   if (changed) updateFilterBadge();
 }
 
-function renderAll() {
-  document.getElementById('item-count').textContent = items.length + ' item' + (items.length!==1?'s':'');
-  buildStoreFilterBar();
-  buildTagFilterBar();
-  buildShoppingTagFilterBarInline();
-  renderHealthDashboard();
-  renderPendingDeliveries();
-  renderIncompleteSection();
-  updateSnSBanner();
-  reconcileFilters();
-  renderGrid();
-  // sync settings UI
-  document.getElementById('setting-threshold').value = settings.threshold;
-  document.getElementById('setting-country').value   = settings.country;
-  const emailEl = document.getElementById('setting-email');
-  if (emailEl) emailEl.value = settings.email || '';
-  const intervalEl = document.getElementById('setting-email-interval');
-  if (intervalEl) intervalEl.value = settings.emailInterval ?? 30;
-  const startEl = document.getElementById('setting-email-start');
-  if (startEl) startEl.value = settings.emailStartDate || '';
-  const startTimeEl = document.getElementById('setting-email-start-time');
-  if (startTimeEl) startTimeEl.value = settings.emailStartTime || '09:00';
-  updateLastSentUI();
+// ═══════════════════════════════════════════════════════════
+//  REACTIVE RENDER SCHEDULER
+//  Replaces renderAll() with targeted dirty-flag rendering.
+//  Multiple saves in the same frame coalesce into one render pass.
+// ═══════════════════════════════════════════════════════════
+
+const RENDER_REGIONS = ['grid','dashboard','filters','shopping','sns','settings-ui'];
+const _dirty  = new Set();
+let   _raf    = null;
+let   _rendering = false;
+
+function scheduleRender(...regions) {
+  if (regions.length === 0) regions = RENDER_REGIONS; // full render if no args
+  regions.forEach(r => _dirty.add(r));
+  if (_raf) return; // already scheduled — extra dirty flags will be picked up
+  _raf = requestAnimationFrame(_flushRender);
 }
+
+function _flushRender() {
+  _raf = null;
+  if (_rendering) {
+    // Re-schedule — a previous render is still running (async)
+    _raf = requestAnimationFrame(_flushRender);
+    return;
+  }
+  _rendering = true;
+  const regions = new Set(_dirty);
+  _dirty.clear();
+
+  try {
+    // Always update item count
+    const countEl = document.getElementById('item-count');
+    if (countEl) countEl.textContent = items.length + ' item' + (items.length!==1?'s':'');
+
+    if (regions.has('filters')) {
+      buildStoreFilterBar();
+      buildTagFilterBar();
+      buildShoppingTagFilterBarInline();
+      reconcileFilters();
+    }
+    if (regions.has('dashboard')) {
+      renderHealthDashboard();
+      renderPendingDeliveries();
+      renderIncompleteSection();
+    }
+    if (regions.has('sns')) {
+      updateSnSBanner();
+    }
+    if (regions.has('grid')) {
+      renderGrid();
+    }
+    if (regions.has('shopping') && document.getElementById('shopping-panel')?.style.display !== 'none') {
+      renderShoppingList();
+    }
+    if (regions.has('settings-ui')) {
+      const t  = document.getElementById('setting-threshold');
+      const c  = document.getElementById('setting-country');
+      const e  = document.getElementById('setting-email');
+      const iv = document.getElementById('setting-email-interval');
+      const sd = document.getElementById('setting-email-start');
+      const st = document.getElementById('setting-email-start-time');
+      if (t)  t.value  = settings.threshold;
+      if (c)  c.value  = settings.country;
+      if (e)  e.value  = settings.email || '';
+      if (iv) iv.value = settings.emailInterval ?? 30;
+      if (sd) sd.value = settings.emailStartDate || '';
+      if (st) st.value = settings.emailStartTime || '09:00';
+      updateLastSentUI();
+    }
+  } finally {
+    _rendering = false;
+    // If new dirty flags arrived during render, flush again
+    if (_dirty.size > 0) _raf = requestAnimationFrame(_flushRender);
+  }
+}
+
+// Legacy alias — keeps existing callers working, schedules a full render
+function renderAll() { scheduleRender(...RENDER_REGIONS); }
 
 function renderGrid() {
   const threshold = settings.threshold;
@@ -5875,7 +5929,7 @@ async function toggleItemTag(itemId, tagIndex) {
   touchItem(item);
   await saveData();
   // Re-render just this card's tags without full grid re-render
-  renderAll();
+  scheduleRender('grid');
   if (driveConnected) setTimeout(syncAll, 400);
 }
 
@@ -6249,7 +6303,7 @@ async function applyFrequencySuggestion(id, avgMonths) {
   const rounded = Math.max(0.5, Math.round(avgMonths * 2) / 2); // round to nearest 0.5
   item.months = rounded;
   await saveData();
-  renderAll();
+  scheduleRender('grid');
   toast(`Updated to ${rounded} month${rounded !== 1 ? 's' : ''} per purchase ✓`);
   if (driveConnected) setTimeout(syncAll, 400);
 }
@@ -6814,7 +6868,7 @@ async function saveStockCount() {
 
   await saveData();
   closeModal('stock-count-modal');
-  renderAll();
+  scheduleRender('grid', 'dashboard');
   toast(val === '' ? 'Stock count cleared' : 'Stock count updated ✓');
   if (driveConnected) setTimeout(syncAll, 400);
 }
@@ -6999,7 +7053,7 @@ async function toggleSnS(id) {
   item.subscribeAndSave = !item.subscribeAndSave;
   await saveData();
   renderSavingsView();
-  updateSnSBanner();
+  scheduleRender('sns');
   toast(item.subscribeAndSave ? 'Marked as subscribed ✓' : 'Marked as not subscribed');
   if (driveConnected || dropboxConnected) setTimeout(syncAll, 400);
 }
@@ -7598,7 +7652,7 @@ async function saveItem() {
   await saveData();
   closeModal('item-modal');
   if (editingId) clearQuickAddedFlag(editingId);
-  renderAll();
+  scheduleRender('grid', 'dashboard', 'filters', 'shopping', 'sns');
   toast('Item saved ✓');
   setTimeout(syncAll, 400);
 }
@@ -7622,7 +7676,7 @@ async function saveLog() {
   touchField(item, 'logs', 'ordered', 'orderedAt');
   await saveData();
   closeModal('log-modal');
-  renderAll();
+  scheduleRender('grid', 'dashboard', 'shopping');
   setTimeout(syncAll, 400);
 
   // If triggered from "Delivered" button with no prior log, go straight to delivered modal
@@ -7709,7 +7763,7 @@ async function saveDelivered() {
   touchItem(item);
   await saveData();
   closeModal('delivered-modal');
-  renderAll();
+  scheduleRender('grid', 'dashboard', 'shopping');
   setTimeout(syncAll, 400);
 
   // Offer reminder setup
@@ -7764,7 +7818,7 @@ async function saveDeliveryReminder() {
   touchItem(item);
   await saveData();
   closeModal('delivery-reminder-modal');
-  renderAll();
+  scheduleRender('grid');
   setTimeout(syncAll, 400);
   toast(`🔔 Reminder set: every ${interval} ${unit}`);
 }
@@ -7789,7 +7843,7 @@ async function saveStartedUsing() {
   touchField(item, 'startedUsing');
   await saveData();
   closeModal('started-using-modal');
-  renderAll();
+  scheduleRender('grid', 'dashboard');
   setTimeout(syncAll, 400);
   toast('Start date saved — stock clock updated ✓');
 }
@@ -7801,7 +7855,7 @@ async function deleteItem(id) {
   await addTombstone(id);
   await saveData();
   closeModal('item-modal');
-  renderAll();
+  scheduleRender('grid', 'dashboard', 'shopping');
   toast('Item removed');
   setTimeout(syncAll, 400);
 }
@@ -7842,7 +7896,7 @@ async function importData(e) {
       if (d.settings) settings = {...settings, ...d.settings};
       await saveData();
       await _saveSettings();
-      renderAll();
+      scheduleRender(...RENDER_REGIONS);
       toast('Data imported ✓');
     } catch(err) { alert('Could not parse file. Make sure it is a valid Stockroom JSON export.'); }
   };
@@ -7853,7 +7907,7 @@ async function clearAll() {
   if (!confirm('This will delete all items and purchase history. Are you sure?')) return;
   items = [];
   await saveData();
-  renderAll();
+  scheduleRender(...RENDER_REGIONS);
   toast('All data cleared');
 }
 
@@ -8253,7 +8307,7 @@ async function syncNow() {
         await saveDeletedIds(merged);
       }
 
-      renderAll();
+      scheduleRender(...RENDER_REGIONS);
     }
 
     // ── Step 3: Upload merged data back ──
@@ -8443,7 +8497,7 @@ async function syncDropbox() {
           remote.deletedIds.forEach(id => merged.add(id));
           await saveDeletedIds(merged);
         }
-        renderAll();
+        scheduleRender(...RENDER_REGIONS);
       }
     }
 
@@ -8488,7 +8542,7 @@ async function signOutDropbox() {
   if (confirm('Clear local data on this device too?\n\nCloud data is unaffected — you can restore it by signing back in.')) {
     items = [];
     await saveData();
-    renderAll();
+    scheduleRender('grid', 'dashboard');
     toast('Local data cleared');
   }
 }
@@ -8548,7 +8602,7 @@ async function signOutDrive() {
   if (confirm('Clear local data on this device too?\n\nCloud data is unaffected — you can restore it by signing back in.')) {
     items = [];
     await saveData();
-    renderAll();
+    scheduleRender('grid', 'dashboard');
     toast('Local data cleared');
   }
 }
@@ -9213,7 +9267,7 @@ async function init() {
   activeProfile = localStorage.getItem('stockroom_active_profile') || 'default';
   await loadProfile(activeProfile);
 
-  renderAll();
+  scheduleRender(...RENDER_REGIONS);
   loadNotifSettings();
   await loadReminders();
   await loadGrocery();
