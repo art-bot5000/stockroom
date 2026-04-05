@@ -1880,6 +1880,77 @@ const STORES_BY_COUNTRY = {
 function getStores(code) { return STORES_BY_COUNTRY[code] || STORES_BY_COUNTRY.OTHER; }
 
 // ═══════════════════════════════════════════
+//  INDEXEDDB — async storage layer
+//  Replaces localStorage for all data stores.
+//  UI state (wizard, compact, notif flags) stays in localStorage.
+// ═══════════════════════════════════════════
+
+const DB_NAME    = 'stockroom';
+const DB_VERSION = 1;
+const DB_STORES  = ['items','settings','reminders','groceries','departments','deletedIds','profiles'];
+
+let _db = null;
+
+function openDB() {
+  if (_db) return Promise.resolve(_db);
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, DB_VERSION);
+    req.onupgradeneeded = e => {
+      const db = e.target.result;
+      DB_STORES.forEach(s => { if (!db.objectStoreNames.contains(s)) db.createObjectStore(s); });
+    };
+    req.onsuccess = e => { _db = e.target.result; resolve(_db); };
+    req.onerror   = e => reject(e.target.error);
+  });
+}
+
+async function dbGet(store, key) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx  = db.transaction(store, 'readonly');
+    const req = tx.objectStore(store).get(key);
+    req.onsuccess = e => resolve(e.target.result ?? null);
+    req.onerror   = e => reject(e.target.error);
+  });
+}
+
+async function dbPut(store, key, value) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx  = db.transaction(store, 'readwrite');
+    const req = tx.objectStore(store).put(value, key);
+    req.onsuccess = () => resolve();
+    req.onerror   = e => reject(e.target.error);
+  });
+}
+
+async function dbDelete(store, key) {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx  = db.transaction(store, 'readwrite');
+    const req = tx.objectStore(store).delete(key);
+    req.onsuccess = () => resolve();
+    req.onerror   = e => reject(e.target.error);
+  });
+}
+
+// Migrate a single key from localStorage into IndexedDB then remove it
+async function migrateFromLocalStorage(lsKey, dbStore, dbKey, transform) {
+  const raw = localStorage.getItem(lsKey);
+  if (!raw) return null;
+  try {
+    const parsed = JSON.parse(raw);
+    const value  = transform ? transform(parsed) : parsed;
+    await dbPut(dbStore, dbKey, value);
+    localStorage.removeItem(lsKey);
+    return value;
+  } catch(e) {
+    console.warn('Migration failed for', lsKey, e);
+    return null;
+  }
+}
+
+// ═══════════════════════════════════════════
 //  CONFIG
 // ═══════════════════════════════════════════
 const CLIENT_ID       = '589308993147-rfj3kbaave6uhf3k1ojes3ph2l1pkd1m.apps.googleusercontent.com';
@@ -2001,80 +2072,187 @@ const STATUS_COLOR = { critical:'#e85050', warn:'#e8a838', ok:'#4cbb8a', nodata:
 const STATUS_LABEL = { critical:'🔴 Critical', warn:'🟡 Low', ok:'🟢 Good', nodata:'⚪ No data' };
 
 // ═══════════════════════════════════════════
-//  PERSISTENCE
+//  PERSISTENCE — IndexedDB backed
 // ═══════════════════════════════════════════
-function loadData() {
-  try {
-    const d = localStorage.getItem('stockroom_items');
-    if (d) {
-      const parsed = JSON.parse(d);
-      // Only assign if it's a non-empty array — never silently replace with garbage
-      if (Array.isArray(parsed)) items = parsed;
-    }
-  } catch(e) { console.warn('stockroom: could not load items from localStorage', e); }
-  try {
-    const s = localStorage.getItem('stockroom_settings');
-    if (s) {
-      const parsed = JSON.parse(s);
-      if (parsed && typeof parsed === 'object') settings = { ...settings, ...parsed };
-    }
-  } catch(e) { console.warn('stockroom: could not load settings from localStorage', e); }
+async function loadData() {
+  // Try IndexedDB first
+  let loadedItems    = await dbGet('items',    'items');
+  let loadedSettings = await dbGet('settings', 'settings');
+
+  // First-run migration from localStorage
+  if (!loadedItems) {
+    loadedItems = await migrateFromLocalStorage('stockroom_items', 'items', 'items', v => v);
+  }
+  if (!loadedSettings) {
+    loadedSettings = await migrateFromLocalStorage('stockroom_settings', 'settings', 'settings', v => v);
+  }
+
+  if (Array.isArray(loadedItems)) items = loadedItems;
+  if (loadedSettings && typeof loadedSettings === 'object') settings = { ...settings, ...loadedSettings };
 }
 
-function saveData() {
-  try {
-    if (!Array.isArray(items)) { console.error('stockroom: items is not an array, aborting save'); return; }
-    localStorage.setItem('stockroom_items', JSON.stringify(items));
-  } catch(e) { console.warn('stockroom: could not save items', e); }
-  // Keep profile store in sync so stale items can't resurrect via loadProfile
-  if (activeProfile) saveCurrentProfile();
+async function saveData() {
+  if (!Array.isArray(items)) { console.error('stockroom: items is not an array, aborting save'); return; }
+  await dbPut('items', 'items', items);
+  if (activeProfile) await saveCurrentProfile();
+  registerBackgroundSync(); // queue a background sync in case we're offline
+}
+
+async function saveSettings() {
+  settings.threshold      = parseInt(document.getElementById('setting-threshold').value);
+  settings.country        = document.getElementById('setting-country').value;
+  settings.email          = document.getElementById('setting-email').value.trim();
+  settings.emailInterval  = parseInt(document.getElementById('setting-email-interval').value);
+  settings.emailStartDate = document.getElementById('setting-email-start').value || null;
+  settings.emailStartTime = document.getElementById('setting-email-start-time').value || '09:00';
+  await dbPut('settings', 'settings', settings);
+  updateLastSentUI();
+  pushScheduleToWorker();
+  renderAll();
+}
+
+async function _saveSettings() {
+  // Internal: save settings without triggering UI side effects
+  await dbPut('settings', 'settings', settings);
 }
 
 // Stamp updatedAt on an item whenever it's modified
-function touchItem(item) {
-  item.updatedAt = new Date().toISOString();
+// ── Field-level timestamps (lightweight CRDT) ────────────
+// touchField stamps individual fields in item._fieldTs so mergeItems
+// can resolve conflicts at field granularity rather than whole-item LWW.
+// Fields with no _fieldTs entry fall back to item-level updatedAt.
+function touchField(item, ...fields) {
+  const now = new Date().toISOString();
+  item.updatedAt = now;
+  if (!item._fieldTs) item._fieldTs = {};
+  if (fields.length === 0) {
+    // No specific fields — stamp the whole item (backwards compat for touchItem callers)
+    return;
+  }
+  fields.forEach(f => { item._fieldTs[f] = now; });
 }
 
-// Merge two item arrays.
-// For each item id present in both sets:
-//   - If both have updatedAt: newest wins
-//   - If neither has updatedAt: remoteWins flag decides (based on which cloud file is newer)
-//   - If only one has updatedAt: that one wins
-// Items only in one set are always kept.
-// ── Deletion tombstones ───────────────────────────────────
-// Keeps a set of deleted item IDs so they survive cloud sync merges
-function loadDeletedIds() {
-  try { return new Set(JSON.parse(localStorage.getItem('stockroom_deleted_ids') || '[]')); } catch(e) { return new Set(); }
+// Keep touchItem as an alias for callers that set multiple fields at once
+function touchItem(item) { touchField(item); }
+
+// ── Logs union merge ─────────────────────────────────────
+// Logs are append-only — merge by ID union, never discard an entry
+function mergeLogs(localLogs = [], remoteLogs = []) {
+  const byId = new Map();
+  // Remote first so local can overwrite (local edits to existing logs win)
+  for (const l of remoteLogs) byId.set(l.id, l);
+  for (const l of localLogs)  byId.set(l.id, l);
+  return Array.from(byId.values()).sort((a, b) => new Date(a.date) - new Date(b.date));
 }
-function saveDeletedIds(set) {
-  try { localStorage.setItem('stockroom_deleted_ids', JSON.stringify([...set])); } catch(e) {}
+
+// ── Field-level item merge ───────────────────────────────
+function mergeItemFields(local, remote) {
+  // Start with a shallow copy of local
+  const result = { ...local };
+
+  // Fields we track individually — everything except id, updatedAt, _fieldTs, logs
+  const SCALAR_FIELDS = [
+    'name','category','cadence','qty','months','url','store','notes',
+    'startedUsing','rating','imageUrl','storePrices','expiry',
+    'thresholdOverride','replacementInterval','replacementUnit',
+    'lastReplaced','ordered','orderedAt','quickAdded','tags',
+    'subscribeAndSave','stockCount','stockCountDate',
+  ];
+
+  const localTs  = local._fieldTs  || {};
+  const remoteTs = remote._fieldTs || {};
+  const itemLocalTime  = local.updatedAt  ? new Date(local.updatedAt).getTime()  : 0;
+  const itemRemoteTime = remote.updatedAt ? new Date(remote.updatedAt).getTime() : 0;
+
+  for (const field of SCALAR_FIELDS) {
+    if (!(field in remote)) continue; // remote doesn't have this field — keep local
+    const lt = localTs[field]  ? new Date(localTs[field]).getTime()  : itemLocalTime;
+    const rt = remoteTs[field] ? new Date(remoteTs[field]).getTime() : itemRemoteTime;
+    if (rt > lt) result[field] = remote[field];
+  }
+
+  // Logs: union merge by ID
+  result.logs = mergeLogs(local.logs, remote.logs);
+
+  // Merge _fieldTs — keep the newest timestamp per field
+  result._fieldTs = { ...remoteTs, ...localTs };
+  for (const f of Object.keys(remoteTs)) {
+    if (!localTs[f] || new Date(remoteTs[f]) > new Date(localTs[f])) {
+      result._fieldTs[f] = remoteTs[f];
+    }
+  }
+
+  // updatedAt = newest of the two
+  result.updatedAt = itemLocalTime >= itemRemoteTime ? local.updatedAt : remote.updatedAt;
+
+  return result;
 }
-function addTombstone(id) {
-  const set = loadDeletedIds();
+
+async function mergeItems(local, remote, remoteWins = false) {
+  const deletedIds = await loadDeletedIds();
+  const merged = new Map();
+
+  for (const item of local) {
+    if (!deletedIds.has(item.id)) merged.set(item.id, item);
+  }
+
+  for (const remoteItem of remote) {
+    if (deletedIds.has(remoteItem.id)) continue;
+    const localItem = merged.get(remoteItem.id);
+    if (!localItem) {
+      // Item only in remote — add it
+      merged.set(remoteItem.id, remoteItem);
+    } else {
+      // Item in both — field-level merge
+      merged.set(remoteItem.id, mergeItemFields(localItem, remoteItem));
+    }
+  }
+
+  return Array.from(merged.values());
+}
+async function loadDeletedIds() {
+  const stored = await dbGet('deletedIds', 'deletedIds');
+  if (stored) return new Set(stored);
+  // Migration from localStorage
+  try {
+    const raw = localStorage.getItem('stockroom_deleted_ids');
+    if (raw) {
+      const set = new Set(JSON.parse(raw));
+      await saveDeletedIds(set);
+      localStorage.removeItem('stockroom_deleted_ids');
+      return set;
+    }
+  } catch(e) {}
+  return new Set();
+}
+async function saveDeletedIds(set) {
+  await dbPut('deletedIds', 'deletedIds', [...set]);
+}
+async function addTombstone(id) {
+  const set = await loadDeletedIds();
   set.add(id);
-  saveDeletedIds(set);
+  await saveDeletedIds(set);
 }
-function removeTombstone(id) {
-  const set = loadDeletedIds();
+async function removeTombstone(id) {
+  const set = await loadDeletedIds();
   set.delete(id);
-  saveDeletedIds(set);
+  await saveDeletedIds(set);
 }
 
-function mergeItems(local, remote, remoteWins = false) {
-  const deletedIds = loadDeletedIds();
+async function mergeItems(local, remote, remoteWins = false) {
+  const deletedIds = await loadDeletedIds();
   const merged = new Map();
   for (const item of local) {
     if (!deletedIds.has(item.id)) merged.set(item.id, item);
   }
   for (const remoteItem of remote) {
-    if (deletedIds.has(remoteItem.id)) continue; // locally deleted — never restore
+    if (deletedIds.has(remoteItem.id)) continue;
     const localItem = merged.get(remoteItem.id);
     if (!localItem) {
       merged.set(remoteItem.id, remoteItem);
     } else {
       const localTime  = localItem.updatedAt  ? new Date(localItem.updatedAt).getTime()  : null;
       const remoteTime = remoteItem.updatedAt ? new Date(remoteItem.updatedAt).getTime() : null;
-
       if (localTime !== null && remoteTime !== null) {
         if (remoteTime > localTime) merged.set(remoteItem.id, remoteItem);
       } else if (remoteTime !== null && localTime === null) {
@@ -2087,20 +2265,6 @@ function mergeItems(local, remote, remoteWins = false) {
     }
   }
   return Array.from(merged.values());
-}
-function saveSettings() {
-  settings.threshold      = parseInt(document.getElementById('setting-threshold').value);
-  settings.country        = document.getElementById('setting-country').value;
-  settings.email          = document.getElementById('setting-email').value.trim();
-  settings.emailInterval  = parseInt(document.getElementById('setting-email-interval').value);
-  settings.emailStartDate = document.getElementById('setting-email-start').value || null;
-  settings.emailStartTime = document.getElementById('setting-email-start-time').value || '09:00';
-  // customTags preserved — managed inline via addTag/deleteTag
-  try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e){}
-  updateLastSentUI();
-  // Push schedule to Worker so cron can act on it
-  pushScheduleToWorker();
-  renderAll();
 }
 
 // ═══════════════════════════════════════════
@@ -2185,9 +2349,9 @@ function wizardBack() {
   document.getElementById('dot-1').classList.add('active');
 }
 
-function wizardFinish() {
+async function wizardFinish() {
   settings.country = wizardCountry;
-  try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e){}
+  await _saveSettings();
   localStorage.setItem('stockroom_seen', '1');
   localStorage.setItem('stockroom_country_set', '1');
   document.getElementById('wizard').style.display = 'none';
@@ -2413,9 +2577,9 @@ function updateLastSentUI() {
     : 'is overdue — Deno will send on next hourly check'}`;
 }
 
-function resetLastSent() {
+async function resetLastSent() {
   settings.emailLastSent = null;
-  try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e){}
+  await _saveSettings();
   if (WORKER_URL && settings.email) {
     fetch(`${WORKER_URL}/reset-schedule`, {
       method: 'POST',
@@ -2427,21 +2591,20 @@ function resetLastSent() {
   toast('Schedule reset — next send will be at your start date/time');
 }
 
-function handleUnsubscribe() {
+async function handleUnsubscribe() {
   // Switch to settings tab so the user can see the email card
   const settingsTab = [...document.querySelectorAll('.tab')].find(t => t.textContent.includes('Settings'));
   if (settingsTab) showView('settings', settingsTab);
 
   // Show a confirmation prompt
-  setTimeout(() => {
+  setTimeout(async () => {
     if (!confirm('Stop scheduled email reminders from STOCKROOM?\n\nYou can re-enable them any time in Settings → Email Reminders.')) return;
 
-    // Clear schedule locally
     settings.emailStartDate = null;
     settings.emailStartTime = null;
     settings.emailLastSent  = null;
     settings.emailInterval  = 0;
-    try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e){}
+    await _saveSettings();
 
     // Clear schedule on Worker too
     if (WORKER_URL) {
@@ -2466,7 +2629,7 @@ function handleUnsubscribe() {
   }, 400);
 }
 
-function checkScheduledEmail() {
+async function checkScheduledEmail() {
   // Client-side: just update the UI — the Deno cron is the single source of truth for sending.
   // Removed client-side send trigger to prevent double-sends if app opens after scheduled time.
   updateLastSentUI();
@@ -2504,13 +2667,16 @@ async function sendReminderEmail(manual = true) {
     const res = await fetch(`${WORKER_URL}/send-reminder`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ to: email, urgent, upcoming, sns: snsPayload }),
+      body: JSON.stringify({ to: email, urgent, upcoming, sns: snsPayload, manual }),
     });
     const data = await res.json();
     if (res.ok) {
-      settings.emailLastSent = new Date().toISOString();
-      try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e){}
-      updateLastSentUI();
+      // Only update last-sent timestamp for scheduled sends, not manual ones
+      if (!manual) {
+        settings.emailLastSent = new Date().toISOString();
+        await _saveSettings();
+        updateLastSentUI();
+      }
       if (manual) {
         const total = urgent.length + upcoming.length;
         const statusEl = document.getElementById('email-status');
@@ -3286,7 +3452,7 @@ function closeIncomingItem() {
   if (el) el.remove();
 }
 
-function addIncomingItem(payload, openEdit) {
+async function addIncomingItem(payload, openEdit) {
   closeIncomingItem();
   const newItem = {
     id:          uid(),
@@ -3306,7 +3472,7 @@ function addIncomingItem(payload, openEdit) {
     updatedAt:   new Date().toISOString(),
   };
   items.push(newItem);
-  saveData();
+  await saveData();
   renderAll();
   setTimeout(syncAll, 400);
   if (openEdit) {
@@ -3489,7 +3655,7 @@ function updateQuickAddPreview() {
   btn.textContent = `⚡ Add ${names.length} Item${names.length !== 1 ? 's' : ''}`;
 }
 
-function saveQuickAdd() {
+async function saveQuickAdd() {
   const names = parseQuickAddNames();
   if (!names.length) { toast('Enter at least one item name'); return; }
 
@@ -3514,7 +3680,7 @@ function saveQuickAdd() {
     });
   });
 
-  saveData();
+  await saveData();
   closeModal('quick-add-modal');
   renderAll();
   setTimeout(syncAll, 400);
@@ -3647,7 +3813,7 @@ function scrollToIncomplete() {
 }
 
 // When an item is saved via the full edit form, clear quickAdded flag
-function clearQuickAddedFlag(id) {
+async function clearQuickAddedFlag(id) {
   const item = items.find(i => i.id === id);
   if (item) item.quickAdded = false;
 }
@@ -3676,15 +3842,22 @@ let editingReminderId = null;
 let loggingReminderId = null;
 
 // ── Persistence ───────────────────────────
-function loadReminders() {
-  try {
-    const raw = localStorage.getItem('stockroom_reminders');
-    if (raw) reminders = JSON.parse(raw) || [];
-  } catch(e) { reminders = []; }
+async function loadReminders() {
+  const stored = await dbGet('reminders', 'reminders');
+  if (stored) { reminders = stored; return; }
+  // Migration
+  const raw = localStorage.getItem('stockroom_reminders');
+  if (raw) {
+    try {
+      reminders = JSON.parse(raw) || [];
+      await dbPut('reminders', 'reminders', reminders);
+      localStorage.removeItem('stockroom_reminders');
+    } catch(e) { reminders = []; }
+  }
 }
 
-function saveReminders() {
-  try { localStorage.setItem('stockroom_reminders', JSON.stringify(reminders)); } catch(e){}
+async function saveReminders() {
+  await dbPut('reminders', 'reminders', reminders);
 }
 
 // ── Calculations ──────────────────────────
@@ -3718,8 +3891,8 @@ function getReminderStatus(reminder) {
 }
 
 // ── Render ────────────────────────────────
-function renderReminders() {
-  loadReminders();
+async function renderReminders() {
+  await loadReminders();
 
   // Also collect reminders embedded in items
   const allReminders = [
@@ -4108,7 +4281,7 @@ function openEditReminderModal(id) {
   openModal('reminder-modal');
 }
 
-function saveReminder() {
+async function saveReminder() {
   const name = document.getElementById('r-name').value.trim();
   if (!name) { toast('Enter a name for this reminder'); return; }
 
@@ -4146,21 +4319,21 @@ function saveReminder() {
       item.replacementUnit     = unit;
       item.lastReplaced        = lastDate || item.lastReplaced || null;
       touchItem(item);
-      saveData();
+      await saveData();
     }
   }
 
-  saveReminders();
+  await saveReminders();
   closeModal('reminder-modal');
   renderReminders();
   setTimeout(syncAll, 400);
   toast('Reminder saved ✓');
 }
 
-function deleteReminder(id) {
+async function deleteReminder(id) {
   if (!confirm('Delete this reminder?')) return;
   reminders = reminders.filter(r => r.id !== id);
-  saveReminders();
+  await saveReminders();
   renderReminders();
   toast('Reminder deleted');
 }
@@ -4181,7 +4354,7 @@ function openLogReplacementModal(id) {
   openModal('log-replacement-modal');
 }
 
-function confirmLogReplacement() {
+async function confirmLogReplacement() {
   const date     = document.getElementById('log-replacement-date').value || today();
   const id       = loggingReminderId;
   const isItem   = id.startsWith('item_');
@@ -4189,14 +4362,14 @@ function confirmLogReplacement() {
 
   if (itemId) {
     const item = items.find(i => i.id === itemId);
-    if (item) { item.lastReplaced = date; touchItem(item); saveData(); }
+    if (item) { item.lastReplaced = date; touchField(item, 'lastReplaced'); saveData(); }
   } else {
     const r = reminders.find(r => r.id === id);
     if (r) { r.lastReplaced = date; saveReminders(); }
     // Also update linked item
     if (r?.linkedItemId) {
       const item = items.find(i => i.id === r.linkedItemId);
-      if (item) { item.lastReplaced = date; touchItem(item); saveData(); }
+      if (item) { item.lastReplaced = date; touchField(item, 'lastReplaced'); saveData(); }
     }
   }
 
@@ -4221,21 +4394,21 @@ async function applyReminderReplaced(reminderId, date, token) {
   }
 }
 
-function _applyReplacedLocally(reminderId, date) {
+async function _applyReplacedLocally(reminderId, date) {
   let changed = false;
   if (reminderId.startsWith('item_')) {
     const itemId = reminderId.replace('item_', '');
     const item   = items.find(i => i.id === itemId);
-    if (item) { item.lastReplaced = date; touchItem(item); saveData(); changed = true; }
+    if (item) { item.lastReplaced = date; touchField(item, 'lastReplaced'); saveData(); changed = true; }
   } else {
     const r = reminders.find(r => r.id === reminderId);
     if (r) {
       r.lastReplaced = date;
-      saveReminders();
+      await saveReminders();
       changed = true;
       if (r.linkedItemId) {
         const item = items.find(i => i.id === r.linkedItemId);
-        if (item) { item.lastReplaced = date; touchItem(item); saveData(); }
+        if (item) { item.lastReplaced = date; touchField(item, 'lastReplaced'); saveData(); }
       }
     }
   }
@@ -4271,7 +4444,7 @@ async function pollReminderReplacements() {
 }
 
 // ── In-app notification check ─────────────
-function checkReminderNotifications() {
+async function checkReminderNotifications() {
   if (!notifEnabled || Notification.permission !== 'granted') return;
 
   const allReminders = [
@@ -4340,25 +4513,25 @@ async function sendReminderActionNotification(r) {
 }
 
 
-function markOrdered(id) {
+async function markOrdered(id) {
   const item = items.find(i => i.id === id);
   if (!item) return;
   item.ordered   = true;
   item.orderedAt = new Date().toISOString();
-  touchItem(item);
-  saveData();
+  touchField(item, 'ordered','orderedAt');
+  await saveData();
   renderAll();
   setTimeout(syncAll, 400);
   toast(`📦 ${item.name} marked as ordered`);
 }
 
-function unmarkOrdered(id) {
+async function unmarkOrdered(id) {
   const item = items.find(i => i.id === id);
   if (!item) return;
   item.ordered   = false;
   item.orderedAt = null;
-  touchItem(item);
-  saveData();
+  touchField(item, 'ordered','orderedAt');
+  await saveData();
   renderAll();
   setTimeout(syncAll, 400);
   toast('Removed ordered status');
@@ -4387,44 +4560,55 @@ function loadCompactView() {
 // ═══════════════════════════════════════════
 //  19 — HOUSEHOLD PROFILES
 // ═══════════════════════════════════════════
-function getProfiles() {
-  try { return JSON.parse(localStorage.getItem('stockroom_profiles') || '{}'); } catch(e) { return {}; }
+async function getProfiles() {
+  const stored = await dbGet('profiles', 'profiles');
+  if (stored) return stored;
+  // Migration from localStorage
+  try {
+    const raw = localStorage.getItem('stockroom_profiles');
+    if (raw) {
+      const profiles = JSON.parse(raw) || {};
+      await dbPut('profiles', 'profiles', profiles);
+      localStorage.removeItem('stockroom_profiles');
+      return profiles;
+    }
+  } catch(e) {}
+  return {};
 }
 
-function saveProfiles(profiles) {
-  try { localStorage.setItem('stockroom_profiles', JSON.stringify(profiles)); } catch(e){}
+async function saveProfiles(profiles) {
+  await dbPut('profiles', 'profiles', profiles);
 }
 
-function loadProfile(key) {
+async function loadProfile(key) {
   activeProfile = key || 'default';
   try { localStorage.setItem('stockroom_active_profile', activeProfile); } catch(e){}
-  const profiles = getProfiles();
-  const profile  = profiles[activeProfile];
+  const profiles  = await getProfiles();
+  const profile   = profiles[activeProfile];
   if (profile) {
-    const deletedIds = loadDeletedIds();
+    const deletedIds = await loadDeletedIds();
     items    = (profile.items || []).filter(i => !deletedIds.has(i.id));
     settings = { threshold: 20, country: 'GB', ...profile.settings };
   } else {
-    // First load — migrate existing data into default profile
-    loadData();
-    saveCurrentProfile();
+    await loadData();
+    await saveCurrentProfile();
   }
   updateProfileLabel();
   renderAll();
   updateSyncUI();
 }
 
-function saveCurrentProfile() {
-  const deletedIds = loadDeletedIds();
-  const profiles = getProfiles();
+async function saveCurrentProfile() {
+  const deletedIds = await loadDeletedIds();
+  const profiles = await getProfiles();
   profiles[activeProfile] = {
     items: JSON.parse(JSON.stringify(items.filter(i => !deletedIds.has(i.id)))),
     settings,
   };
-  saveProfiles(profiles);
+  await saveProfiles(profiles);
 }
 
-function updateProfileLabel() {
+async function updateProfileLabel() {
   const profiles = getProfiles();
   const name     = profiles[activeProfile]?.name || (activeProfile === 'default' ? 'Home' : activeProfile);
   const label    = document.getElementById('profile-label');
@@ -4436,7 +4620,7 @@ function openProfilePicker() {
   openModal('profile-modal');
 }
 
-function renderProfileList() {
+async function renderProfileList() {
   const profiles = getProfiles();
   const list     = document.getElementById('profile-list');
   if (!list) return;
@@ -4458,32 +4642,32 @@ function renderProfileList() {
   }).join('');
 }
 
-function switchProfile(key) {
+async function switchProfile(key) {
   // Save current before switching
-  saveCurrentProfile();
+  await saveCurrentProfile();
   closeModal('profile-modal');
-  loadProfile(key);
+  await loadProfile(key);
   toast(`Switched to ${getProfiles()[key]?.name || key}`);
 }
 
-function addProfile() {
+async function addProfile() {
   const nameEl = document.getElementById('new-profile-name');
   const name   = nameEl?.value.trim();
   if (!name) { toast('Enter a profile name'); return; }
   const key    = 'profile_' + Date.now();
   const profiles = getProfiles();
   profiles[key]  = { name, items: [], settings: { threshold: 20, country: 'GB' } };
-  saveProfiles(profiles);
+  await saveProfiles(profiles);
   if (nameEl) nameEl.value = '';
   renderProfileList();
   toast(`Profile "${name}" created`);
 }
 
-function deleteProfile(key) {
+async function deleteProfile(key) {
   if (!confirm('Delete this profile and all its items?')) return;
   const profiles = getProfiles();
   delete profiles[key];
-  saveProfiles(profiles);
+  await saveProfiles(profiles);
   renderProfileList();
   toast('Profile deleted');
 }
@@ -4697,12 +4881,12 @@ function renderHealthDashboard() {
 // ═══════════════════════════════════════════
 //  DELETE LOG ENTRIES
 // ═══════════════════════════════════════════
-function deleteLogEntry(itemId, logId) {
+async function deleteLogEntry(itemId, logId) {
   const item = items.find(i => i.id === itemId);
   if (!item) return;
   item.logs = (item.logs||[]).filter(l => l.id !== logId);
   touchItem(item);
-  saveData();
+  await saveData();
   // Re-render the log history in place
   renderLogHistory(item);
   renderAll();
@@ -5079,7 +5263,7 @@ function swipeMove(e, id) {
   }
 }
 
-function swipeEnd(e, id) {
+async function swipeEnd(e, id) {
   const s = swipeState[id];
   if (!s) return;
   const hint = document.getElementById('swipe-hint-' + id);
@@ -5098,7 +5282,7 @@ let deletedItem   = null;
 let deletedIndex  = null;
 let undoTimer     = null;
 
-function deleteItem(id) {
+async function deleteItem(id) {
   const idx  = items.findIndex(i => i.id === id);
   const item = items[idx];
   if (!item) return;
@@ -5107,8 +5291,8 @@ function deleteItem(id) {
   deletedItem  = item;
   deletedIndex = idx;
   items.splice(idx, 1);
-  addTombstone(id);
-  saveData();
+  await addTombstone(id);
+  await saveData();
   renderAll();
   setTimeout(syncAll, 400);
 
@@ -5125,17 +5309,17 @@ function deleteItem(id) {
   }, 5000);
 }
 
-function undoDelete() {
+async function undoDelete() {
   clearTimeout(undoTimer);
   const t = document.getElementById('undo-toast');
   if (t) t.classList.remove('show');
   if (!deletedItem) return;
   // Remove tombstone so the item can come back
-  removeTombstone(deletedItem.id);
+  await removeTombstone(deletedItem.id);
   items.splice(deletedIndex, 0, deletedItem);
   deletedItem  = null;
   deletedIndex = null;
-  saveData();
+  await saveData();
   renderAll();
   setTimeout(syncAll, 400);
   toast('Restored ✓');
@@ -5162,10 +5346,42 @@ document.addEventListener('visibilitychange', () => {
 if ('serviceWorker' in navigator) {
   navigator.serviceWorker.addEventListener('message', event => {
     if (event.data?.type === 'REMINDER_REPLACED') {
-      const { reminderId, date, token } = event.data;
+      const { reminderId, date } = event.data;
       _applyReplacedLocally(reminderId, date);
     }
+    if (event.data?.type === 'BG_SYNC') {
+      // Background sync fired while app was open — run sync now
+      console.log('BG_SYNC received from SW');
+      syncAll().catch(e => console.warn('BG_SYNC syncAll failed:', e));
+    }
   });
+}
+
+// ── Register background sync after every save ─────────────
+// The browser will fire the 'sync' event in the SW when connectivity
+// returns, even if this tab is closed.
+async function registerBackgroundSync() {
+  if (!('serviceWorker' in navigator) || !('SyncManager' in window)) return;
+  try {
+    const reg = await navigator.serviceWorker.ready;
+    await reg.sync.register('stockroom-sync');
+  } catch(e) {
+    // Background Sync not supported or permission denied — silent fallback
+  }
+}
+
+// ── Check for pending sync flag set by SW while app was closed ─
+async function checkPendingSWSync() {
+  if (!('caches' in window)) return;
+  try {
+    const cache   = await caches.open('stockroom-flags');
+    const pending = await cache.match('pending-sync');
+    if (pending) {
+      await cache.delete('pending-sync');
+      console.log('Pending SW sync flag found — syncing now');
+      setTimeout(syncAll, 800);
+    }
+  } catch(e) {}
 }
 
 // Poll every 5 minutes as a backstop
@@ -5621,7 +5837,7 @@ function cardTagsHTML(item) {
   return `<div style="display:flex;gap:5px;flex-wrap:wrap;margin-bottom:8px">${chips}</div>`;
 }
 
-function toggleItemTag(itemId, tagIndex) {
+async function toggleItemTag(itemId, tagIndex) {
   const item = items.find(i => i.id === itemId);
   if (!item) return;
   if (!item.tags) item.tags = [];
@@ -5629,7 +5845,7 @@ function toggleItemTag(itemId, tagIndex) {
   if (idx === -1) item.tags.push(tagIndex);
   else item.tags.splice(idx, 1);
   touchItem(item);
-  saveData();
+  await saveData();
   // Re-render just this card's tags without full grid re-render
   renderAll();
   if (driveConnected) setTimeout(syncAll, 400);
@@ -5715,20 +5931,20 @@ function showAddTagInput(barId) {
   inp.addEventListener('blur', commit);
 }
 
-function addTag(name) {
+async function addTag(name) {
   const tags = getCustomTags();
   const firstEmpty = tags.findIndex(t => !t || !t.trim());
   if (firstEmpty === -1) return;
   tags[firstEmpty] = name;
   settings.customTags = tags;
-  try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e){}
+  await _saveSettings();
   buildTagFilterBar();
   buildShoppingTagFilterBarInline();
   renderGrid();
   if (driveConnected) setTimeout(syncAll, 400);
 }
 
-function deleteTag(index) {
+async function deleteTag(index) {
   if (!confirm(`Remove tag "${getCustomTags()[index]}"? Items will lose this tag.`)) return;
   const tags = getCustomTags();
   tags[index] = '';
@@ -5738,8 +5954,8 @@ function deleteTag(index) {
   });
   if (activeTagFilter === index) activeTagFilter = null;
   if (shoppingTagFilter === index) shoppingTagFilter = null;
-  try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e){}
-  saveData();
+  await _saveSettings();
+  await saveData();
   buildTagFilterBar();
   buildShoppingTagFilterBarInline();
   renderGrid();
@@ -5999,12 +6215,12 @@ function frequencyInsightHTML(item) {
   </div>`;
 }
 
-function applyFrequencySuggestion(id, avgMonths) {
+async function applyFrequencySuggestion(id, avgMonths) {
   const item = items.find(i => i.id === id);
   if (!item) return;
   const rounded = Math.max(0.5, Math.round(avgMonths * 2) / 2); // round to nearest 0.5
   item.months = rounded;
-  saveData();
+  await saveData();
   renderAll();
   toast(`Updated to ${rounded} month${rounded !== 1 ? 's' : ''} per purchase ✓`);
   if (driveConnected) setTimeout(syncAll, 400);
@@ -6328,12 +6544,12 @@ function emailReport() {
 
 
 
-function rateItem(id, val) {
+async function rateItem(id, val) {
   const item = items.find(i => i.id === id);
   if (!item) return;
   item.rating = item.rating === val ? null : val;
   touchItem(item);
-  saveData();
+  await saveData();
   if (driveConnected) setTimeout(syncAll, 400);
   // Update stars in place — clear preview, set on
   const rating = item.rating || 0;
@@ -6554,7 +6770,7 @@ function updateStockCountPreview(item) {
   preview.style.display = 'block';
 }
 
-function saveStockCount() {
+async function saveStockCount() {
   const item = items.find(i => i.id === stockCountId);
   if (!item) return;
   const val = document.getElementById('sc-remaining').value.trim();
@@ -6568,7 +6784,7 @@ function saveStockCount() {
     item.stockCountDate = countDate || today();
   }
 
-  saveData();
+  await saveData();
   closeModal('stock-count-modal');
   renderAll();
   toast(val === '' ? 'Stock count cleared' : 'Stock count updated ✓');
@@ -6749,11 +6965,11 @@ function renderSavingsView() {
   document.getElementById('savings-content').innerHTML = html;
 }
 
-function toggleSnS(id) {
+async function toggleSnS(id) {
   const item = items.find(i => i.id === id);
   if (!item) return;
   item.subscribeAndSave = !item.subscribeAndSave;
-  saveData();
+  await saveData();
   renderSavingsView();
   updateSnSBanner();
   toast(item.subscribeAndSave ? 'Marked as subscribed ✓' : 'Marked as not subscribed');
@@ -7274,7 +7490,7 @@ function openLogPurchaseModal(id) {
 // ═══════════════════════════════════════════
 //  SAVE / DELETE
 // ═══════════════════════════════════════════
-function saveItem() {
+async function saveItem() {
   const name = document.getElementById('f-name').value.trim();
   if (!name) { alert('Please enter a name for this item.'); return; }
   const startedUsing = document.getElementById('f-started-using').value || null;
@@ -7321,7 +7537,11 @@ function saveItem() {
           item.logs = [{ id: uid(), date: lastDate, qty: lastQty, price: lastPrice, store: storeVal }];
         }
       }
-      touchItem(item);
+      touchField(item,
+        'name','category','cadence','qty','months','url','store',
+        'notes','startedUsing','rating','imageUrl','storePrices',
+        'expiry','thresholdOverride','replacementInterval','replacementUnit'
+      );
     }
   } else {
     const lastDate  = document.getElementById('f-last-date').value;
@@ -7347,7 +7567,7 @@ function saveItem() {
       updatedAt:         new Date().toISOString(),
     });
   }
-  saveData();
+  await saveData();
   closeModal('item-modal');
   if (editingId) clearQuickAddedFlag(editingId);
   renderAll();
@@ -7355,7 +7575,7 @@ function saveItem() {
   setTimeout(syncAll, 400);
 }
 
-function saveLog() {
+async function saveLog() {
   const item = items.find(i => i.id === loggingId);
   if (!item) return;
   if (!item.logs) item.logs = [];
@@ -7371,8 +7591,8 @@ function saveLog() {
   // Mark as ordered
   item.ordered   = true;
   item.orderedAt = new Date().toISOString();
-  touchItem(item);
-  saveData();
+  touchField(item, 'logs', 'ordered', 'orderedAt');
+  await saveData();
   closeModal('log-modal');
   renderAll();
   setTimeout(syncAll, 400);
@@ -7429,7 +7649,7 @@ function toggleDeliveredStarted() {
   document.getElementById('delivered-started-hint').style.display = checked ? 'none' : 'block';
 }
 
-function saveDelivered() {
+async function saveDelivered() {
   const item = items.find(i => i.id === deliveringId);
   if (!item) return;
 
@@ -7459,7 +7679,7 @@ function saveDelivered() {
   if (startedDate) item.startedUsing = startedDate;
 
   touchItem(item);
-  saveData();
+  await saveData();
   closeModal('delivered-modal');
   renderAll();
   setTimeout(syncAll, 400);
@@ -7506,7 +7726,7 @@ function openDeliveryReminderModal(id, needsStartDate) {
   openModal('delivery-reminder-modal');
 }
 
-function saveDeliveryReminder() {
+async function saveDeliveryReminder() {
   const item = items.find(i => i.id === deliveryReminderItemId);
   if (!item) return;
   const interval = parseInt(document.getElementById('dr-interval').value) || 3;
@@ -7514,7 +7734,7 @@ function saveDeliveryReminder() {
   item.replacementInterval = interval;
   item.replacementUnit     = unit;
   touchItem(item);
-  saveData();
+  await saveData();
   closeModal('delivery-reminder-modal');
   renderAll();
   setTimeout(syncAll, 400);
@@ -7533,25 +7753,25 @@ function openStartedUsingModal(id) {
   openModal('started-using-modal');
 }
 
-function saveStartedUsing() {
+async function saveStartedUsing() {
   const item = items.find(i => i.id === startedUsingItemId);
   if (!item) return;
   const date = document.getElementById('started-using-date').value || today();
   item.startedUsing = date;
-  touchItem(item);
-  saveData();
+  touchField(item, 'startedUsing');
+  await saveData();
   closeModal('started-using-modal');
   renderAll();
   setTimeout(syncAll, 400);
   toast('Start date saved — stock clock updated ✓');
 }
 
-function deleteItem(id) {
+async function deleteItem(id) {
   const item = items.find(i => i.id === id);
   if (!item || !confirm('Remove "' + item.name + '" from your stockroom?')) return;
   items = items.filter(i => i.id !== id);
-  addTombstone(id);
-  saveData();
+  await addTombstone(id);
+  await saveData();
   closeModal('item-modal');
   renderAll();
   toast('Item removed');
@@ -7583,17 +7803,17 @@ function exportData() {
   a.click();
 }
 
-function importData(e) {
+async function importData(e) {
   const file = e.target.files[0];
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = ev => {
+  reader.onload = async ev => {
     try {
       const d = JSON.parse(ev.target.result);
       if (d.items) items = d.items;
       if (d.settings) settings = {...settings, ...d.settings};
-      saveData();
-      try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e){}
+      await saveData();
+      await _saveSettings();
       renderAll();
       toast('Data imported ✓');
     } catch(err) { alert('Could not parse file. Make sure it is a valid Stockroom JSON export.'); }
@@ -7601,10 +7821,10 @@ function importData(e) {
   reader.readAsText(file);
 }
 
-function clearAll() {
+async function clearAll() {
   if (!confirm('This will delete all items and purchase history. Are you sure?')) return;
   items = [];
-  saveData();
+  await saveData();
   renderAll();
   toast('All data cleared');
 }
@@ -7821,7 +8041,7 @@ async function sendEmailNow() {
   } catch(e) { toast('Could not reach email service'); }
 }
 
-function handleOAuthRedirect() {
+async function handleOAuthRedirect() {
   const qParams = new URLSearchParams(location.search);
 
   // ── Google Drive code flow (returns via query string from Worker) ──
@@ -7965,8 +8185,8 @@ async function syncNow() {
       const remoteLastSynced = remote.lastSynced   ? new Date(remote.lastSynced).getTime()   : 0;
       const remoteWins       = remoteLastSynced > localLastSynced;
 
-      items = mergeItems(items, remote.items, remoteWins);
-      saveData();
+      items = await mergeItems(items, remote.items, remoteWins);
+      await saveData();
 
       if (remote.settings) {
         const localTags    = settings.customTags;
@@ -7975,37 +8195,34 @@ async function syncNow() {
         const localDefined  = (localTags||[]).filter(t=>t&&t.trim()).length;
         const remoteDefined = remoteTags.filter(t=>t&&t.trim()).length;
         settings.customTags = localDefined >= remoteDefined ? (localTags||[]) : remoteTags;
-        try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e){}
+        await _saveSettings();
       }
 
-      // Merge groceries — remote wins if newer overall, otherwise keep local if longer
       if (remote.groceries) {
         const localG  = groceryItems;
         const remoteG = remote.groceries;
         if (remoteWins || remoteG.length > localG.length) {
           groceryItems = remoteG;
-          saveGrocery();
+          await saveGrocery();
         }
       }
       if (remote.departments && remote.departments.length) {
         const localD = groceryDepts;
         if (remoteWins || remote.departments.length > localD.length) {
           groceryDepts = remote.departments;
-          saveGroceryDepts();
+          await saveGroceryDepts();
         }
       }
-      // Merge reminders — remote wins if newer
       if (remote.reminders && Array.isArray(remote.reminders)) {
         if (remoteWins || remote.reminders.length > reminders.length) {
           reminders = remote.reminders;
-          saveReminders();
+          await saveReminders();
         }
       }
-      // Merge remote tombstones — union of local + remote deleted IDs
       if (remote.deletedIds && Array.isArray(remote.deletedIds)) {
-        const merged = loadDeletedIds();
+        const merged = await loadDeletedIds();
         remote.deletedIds.forEach(id => merged.add(id));
-        saveDeletedIds(merged);
+        await saveDeletedIds(merged);
       }
 
       renderAll();
@@ -8013,12 +8230,11 @@ async function syncNow() {
 
     // ── Step 3: Upload merged data back ──
     settings.lastSynced = new Date().toISOString();
-    try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e){}
-    // Prune tombstones only for IDs that are back in the live item list (i.e. restored via undo)
+    await _saveSettings();
     const uploadedIds = new Set(items.map(i => i.id));
-    const remainingTombstones = loadDeletedIds();
+    const remainingTombstones = await loadDeletedIds();
     remainingTombstones.forEach(id => { if (uploadedIds.has(id)) remainingTombstones.delete(id); });
-    saveDeletedIds(remainingTombstones);
+    await saveDeletedIds(remainingTombstones);
     await uploadToDrive(JSON.stringify({
       items, settings, lastSynced: settings.lastSynced,
       groceries: groceryItems, departments: groceryDepts, reminders, deletedIds: [...remainingTombstones],
@@ -8163,8 +8379,8 @@ async function syncDropbox() {
         const remoteLastSynced = remote.lastSynced   ? new Date(remote.lastSynced).getTime()   : 0;
         const remoteWins       = remoteLastSynced > localLastSynced;
 
-        items = mergeItems(items, remote.items, remoteWins);
-        saveData();
+        items = await mergeItems(items, remote.items, remoteWins);
+        await saveData();
         if (remote.settings) {
           const localTags    = settings.customTags;
           settings           = { ...remote.settings, ...settings };
@@ -8172,45 +8388,43 @@ async function syncDropbox() {
           const localDefined  = (localTags||[]).filter(t=>t&&t.trim()).length;
           const remoteDefined = remoteTags.filter(t=>t&&t.trim()).length;
           settings.customTags = localDefined >= remoteDefined ? (localTags||[]) : remoteTags;
-          try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e){}
+          await _saveSettings();
         }
         if (remote.groceries) {
           const localG  = groceryItems;
           const remoteG = remote.groceries;
           if (remoteWins || remoteG.length > localG.length) {
             groceryItems = remoteG;
-            saveGrocery();
+            await saveGrocery();
           }
         }
         if (remote.departments && remote.departments.length) {
           if (remoteWins || remote.departments.length > groceryDepts.length) {
             groceryDepts = remote.departments;
-            saveGroceryDepts();
+            await saveGroceryDepts();
           }
         }
         if (remote.reminders && Array.isArray(remote.reminders)) {
           if (remoteWins || remote.reminders.length > reminders.length) {
             reminders = remote.reminders;
-            saveReminders();
+            await saveReminders();
           }
         }
         if (remote.deletedIds && Array.isArray(remote.deletedIds)) {
-          const merged = loadDeletedIds();
+          const merged = await loadDeletedIds();
           remote.deletedIds.forEach(id => merged.add(id));
-          saveDeletedIds(merged);
+          await saveDeletedIds(merged);
         }
         renderAll();
       }
     }
-    // File doesn't exist (404) — will be created on upload
 
-    // Stamp and upload merged data
     settings.lastSynced = new Date().toISOString();
-    try { localStorage.setItem('stockroom_settings', JSON.stringify(settings)); } catch(e){}
+    await _saveSettings();
     const uploadedIdsDb = new Set(items.map(i => i.id));
-    const remainingTombstonesDb = loadDeletedIds();
+    const remainingTombstonesDb = await loadDeletedIds();
     remainingTombstonesDb.forEach(id => { if (uploadedIdsDb.has(id)) remainingTombstonesDb.delete(id); });
-    saveDeletedIds(remainingTombstonesDb);
+    await saveDeletedIds(remainingTombstonesDb);
     await uploadToDropbox(JSON.stringify({
       items, settings, lastSynced: settings.lastSynced,
       groceries: groceryItems, departments: groceryDepts, reminders, deletedIds: [...remainingTombstonesDb],
@@ -8236,7 +8450,7 @@ async function uploadToDropbox(payload) {
   if (!res.ok) throw new Error('Dropbox upload failed: ' + res.status);
 }
 
-function signOutDropbox() {
+async function signOutDropbox() {
   if (!confirm('Sign out of Dropbox?\n\nYour data on Dropbox stays complete. Your local data on this device will remain unless you choose to clear it.')) return;
   dropboxToken     = null;
   dropboxConnected = false;
@@ -8245,7 +8459,7 @@ function signOutDropbox() {
   toast('Signed out of Dropbox');
   if (confirm('Clear local data on this device too?\n\nCloud data is unaffected — you can restore it by signing back in.')) {
     items = [];
-    saveData();
+    await saveData();
     renderAll();
     toast('Local data cleared');
   }
@@ -8295,7 +8509,7 @@ function updateDropboxUI() {
   }
 }
 
-function signOutDrive() {
+async function signOutDrive() {
   if (!confirm('Sign out of Google Drive?\n\nYour data on Drive stays complete. Your local data on this device will remain unless you choose to clear it.')) return;
   accessToken    = null;
   driveConnected = false;
@@ -8305,7 +8519,7 @@ function signOutDrive() {
   toast('Signed out of Google Drive');
   if (confirm('Clear local data on this device too?\n\nCloud data is unaffected — you can restore it by signing back in.')) {
     items = [];
-    saveData();
+    await saveData();
     renderAll();
     toast('Local data cleared');
   }
@@ -8394,11 +8608,11 @@ setInterval(applyAdaptiveColourTemp, 600000);
 let _groceryPrewarmed = false;
 let _reportPrewarmed  = false;
 
-function prewarmView(name) {
+async function prewarmView(name) {
   if (name === 'grocery' && !_groceryPrewarmed) {
     _groceryPrewarmed = true;
     // Pre-load grocery data into memory so render is instant on click
-    loadGrocery();
+    await loadGrocery();
   }
   if (name === 'report' && !_reportPrewarmed) {
     _reportPrewarmed = true;
@@ -8471,19 +8685,36 @@ let grocerySort  = 'dept'; // 'dept' | 'alpha'
 let groceryContextTarget = null;
 let groceryConvertItem   = null;
 
-function loadGrocery() {
-  try { groceryItems = JSON.parse(localStorage.getItem('stockroom_groceries') || '[]'); } catch(e) { groceryItems = []; }
-  try { groceryDepts = JSON.parse(localStorage.getItem('stockroom_departments') || 'null'); } catch(e) { groceryDepts = null; }
-  if (!groceryDepts || groceryDepts.length === 0) { groceryDepts = DEFAULT_DEPTS.map(d => ({...d})); }
+async function loadGrocery() {
+  const storedItems = await dbGet('groceries', 'items');
+  const storedDepts = await dbGet('departments', 'departments');
+  if (storedItems) {
+    groceryItems = storedItems;
+  } else {
+    // Migration from localStorage
+    try {
+      const raw = localStorage.getItem('stockroom_groceries');
+      if (raw) { groceryItems = JSON.parse(raw) || []; await dbPut('groceries', 'items', groceryItems); localStorage.removeItem('stockroom_groceries'); }
+    } catch(e) { groceryItems = []; }
+  }
+  if (storedDepts) {
+    groceryDepts = storedDepts;
+  } else {
+    try {
+      const raw = localStorage.getItem('stockroom_departments');
+      if (raw) { groceryDepts = JSON.parse(raw); await dbPut('departments', 'departments', groceryDepts); localStorage.removeItem('stockroom_departments'); }
+    } catch(e) { groceryDepts = null; }
+  }
+  if (!groceryDepts || groceryDepts.length === 0) groceryDepts = DEFAULT_DEPTS.map(d => ({...d}));
 }
 
-function saveGrocery() {
-  try { localStorage.setItem('stockroom_groceries', JSON.stringify(groceryItems)); } catch(e) {}
+async function saveGrocery() {
+  await dbPut('groceries', 'items', groceryItems);
   if (driveConnected || dropboxConnected) setTimeout(syncAll, 600);
 }
 
-function saveGroceryDepts() {
-  try { localStorage.setItem('stockroom_departments', JSON.stringify(groceryDepts)); } catch(e) {}
+async function saveGroceryDepts() {
+  await dbPut('departments', 'departments', groceryDepts);
 }
 
 function getGroceryShopInterval() {
@@ -8609,16 +8840,16 @@ function groceryItemHTML(item) {
   </div>`;
 }
 
-function toggleGroceryCheck(id, cb) {
+async function toggleGroceryCheck(id, cb) {
   const item = groceryItems.find(i => i.id === id);
   if (!item) return;
   item.checked = cb.checked;
   item.checkedAt = cb.checked ? new Date().toISOString() : null;
-  saveGrocery();
+  await saveGrocery();
   renderGrocery();
 }
 
-function clearCheckedGrocery() {
+async function clearCheckedGrocery() {
   // For recurring items: reset check and bump addedAt; for non-recurring: remove
   groceryItems = groceryItems.filter(item => {
     if (!item.checked) return true;
@@ -8630,7 +8861,7 @@ function clearCheckedGrocery() {
     }
     return false;
   });
-  saveGrocery();
+  await saveGrocery();
   renderGrocery();
 }
 
@@ -8687,7 +8918,7 @@ function toggleGroceryRecurring() {
   document.getElementById('grocery-recurring-opts').style.display = checked ? 'block' : 'none';
 }
 
-function saveGroceryItem() {
+async function saveGroceryItem() {
   const name = document.getElementById('grocery-f-name').value.trim();
   if (!name) { showToast('Please enter an item name'); return; }
   const id        = document.getElementById('grocery-edit-id').value;
@@ -8704,7 +8935,7 @@ function saveGroceryItem() {
   } else {
     groceryItems.push({ id: 'g_'+Date.now()+'_'+Math.random().toString(36).slice(2,6), name, department:dept, notes, recurring, intervalDays, checked:false, addedAt:new Date().toISOString(), updatedAt:new Date().toISOString() });
   }
-  saveGrocery();
+  await saveGrocery();
   closeModal('grocery-item-modal');
   renderGrocery();
 }
@@ -8747,12 +8978,12 @@ function editFromContext() {
   if (id) openEditGroceryItem(id);
 }
 
-function deleteFromContext() {
+async function deleteFromContext() {
   const id = groceryContextTarget;
   dismissGroceryContext();
   if (!id) return;
   groceryItems = groceryItems.filter(i => i.id !== id);
-  saveGrocery();
+  await saveGrocery();
   renderGrocery();
 }
 
@@ -8833,25 +9064,25 @@ function renderGroceryDeptsModal() {
   `).join('');
 }
 
-function moveGroceryDept(idx, dir) {
+async function moveGroceryDept(idx, dir) {
   const newIdx = idx + dir;
   if (newIdx < 0 || newIdx >= groceryDepts.length) return;
   [groceryDepts[idx], groceryDepts[newIdx]] = [groceryDepts[newIdx], groceryDepts[idx]];
-  saveGroceryDepts();
+  await saveGroceryDepts();
   renderGroceryDeptsModal();
 }
 
-function deleteGroceryDept(id) {
+async function deleteGroceryDept(id) {
   const inUse = groceryItems.some(i => i.department === id);
   if (inUse && !confirm('Items use this department. They\'ll move to Other. Continue?')) return;
   if (inUse) groceryItems.forEach(i => { if (i.department === id) i.department = 'other'; });
   groceryDepts = groceryDepts.filter(d => d.id !== id);
-  saveGroceryDepts();
-  saveGrocery();
+  await saveGroceryDepts();
+  await saveGrocery();
   renderGroceryDeptsModal();
 }
 
-function addGroceryDept() {
+async function addGroceryDept() {
   const nameInput  = document.getElementById('grocery-new-dept-name');
   const emojiInput = document.getElementById('grocery-new-dept-emoji');
   const name  = nameInput.value.trim();
@@ -8859,7 +9090,7 @@ function addGroceryDept() {
   if (!name) { showToast('Please enter a department name'); return; }
   const id = 'dept_' + Date.now();
   groceryDepts.push({id, name, emoji});
-  saveGroceryDepts();
+  await saveGroceryDepts();
   nameInput.value  = '';
   emojiInput.value = '';
   renderGroceryDeptsModal();
@@ -8867,7 +9098,7 @@ function addGroceryDept() {
 }
 
 // ── Auto-restore recurring items ───────────────────────────
-function checkGroceryRecurring() {
+async function checkGroceryRecurring() {
   const now = Date.now();
   let changed = false;
   groceryItems.forEach(item => {
@@ -8882,18 +9113,18 @@ function checkGroceryRecurring() {
   if (changed) { saveGrocery(); renderGrocery(); }
 }
 
-function init() {
-  loadData();
+async function init() {
+  // Load all data from IndexedDB (migrates from localStorage on first run)
+  await loadData();
 
   // ── Migration: stamp updatedAt on any item that doesn't have one ──
-  // Runs once — after this every item has a timestamp so merging works correctly
   const now = new Date().toISOString();
   let migrated = false;
   items.forEach(item => {
     if (!item.updatedAt) { item.updatedAt = now; migrated = true; }
   });
   if (migrated) {
-    saveData();
+    await saveData();
     console.log(`Stamped updatedAt on ${items.filter(i=>i.updatedAt===now).length} legacy items`);
   }
 
@@ -8903,7 +9134,6 @@ function init() {
     if (d.driveConnected) {
       driveConnected = true;
       driveFileId    = d.driveFileId || null;
-      // Restore token from sessionStorage (survives refresh, not full close)
       accessToken = sessionStorage.getItem('stockroom_access_token') || null;
     }
   } catch(e){}
@@ -8913,15 +9143,11 @@ function init() {
     const db = JSON.parse(localStorage.getItem('stockroom_dropbox')||'{}');
     if (db.dropboxConnected) {
       dropboxConnected = true;
-      // Restore Dropbox token from sessionStorage
       dropboxToken = sessionStorage.getItem('stockroom_dropbox_token') || null;
     }
   } catch(e){}
 
-  // Handle OAuth token in URL hash
   handleOAuthRedirect();
-
-  // Handle deep links from shortcuts and share target
   handleURLAction();
 
   buildCountryGrid();
@@ -8941,34 +9167,37 @@ function init() {
     localStorage.removeItem('stockroom_wizard_step');
     wizardNext();
   } else if (countrySet) {
-    // Already chose country before — skip straight to sync step
     wizardNext();
   }
 
   updateSyncUI();
   loadCompactView();
   loadFilterPanelState();
-  // Init profiles — migrate existing data into default profile if needed
-  const profilesRaw = localStorage.getItem('stockroom_profiles');
-  if (!profilesRaw) {
-    loadData();
+
+  // Init profiles — migrate if needed
+  const existingProfiles = await getProfiles();
+  const profileKeys = Object.keys(existingProfiles);
+  if (!profileKeys.length) {
+    // First run — wrap current items/settings into default profile
     const profiles = { default: { name: 'Home', items: JSON.parse(JSON.stringify(items)), settings: JSON.parse(JSON.stringify(settings)) } };
-    saveProfiles(profiles);
+    await saveProfiles(profiles);
   }
   activeProfile = localStorage.getItem('stockroom_active_profile') || 'default';
-  loadProfile(activeProfile);
+  await loadProfile(activeProfile);
+
   renderAll();
   loadNotifSettings();
-  loadReminders();
+  await loadReminders();
+  await loadGrocery();
+  await checkGroceryRecurring();
   renderReminders(); // pre-render for badge count
-  // Sync immediately on load
+
   setTimeout(() => { lastAutoSync = Date.now(); checkCloudAhead(); }, 1500);
+  checkPendingSWSync();
   if (migrated) setTimeout(syncAll, 1500);
   setTimeout(checkScheduledEmail, 2000);
   setTimeout(checkLowStockNotifications, 3000);
   setTimeout(checkReminderNotifications, 3500);
-  loadGrocery();
-  checkGroceryRecurring();
 }
 
 init();
