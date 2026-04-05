@@ -3547,17 +3547,45 @@ function handleURLAction() {
     } else if (action === 'unsubscribe') {
       handleUnsubscribe();
     } else if (action === 'share') {
-      // Share target — pre-fill quick add with shared text/title
+      // Share target — user shared a URL/title from Amazon, Tesco, etc.
       const title = params.get('title') || '';
       const text  = params.get('text')  || '';
       const url   = params.get('url')   || '';
-      const name  = title || text || '';
-      openQuickAdd();
-      if (name) {
-        const ta = document.getElementById('quick-add-input');
-        if (ta) { ta.value = name; updateQuickAddPreview(); }
+
+      // If we have a URL, open the full Add Item modal pre-filled
+      if (url) {
+        const detectedStore = urlToStoreName(url);
+        const productName   = title || text || '';
+
+        // Switch to Stockroom tab first
+        const stockTab = [...document.querySelectorAll('.tab')].find(t => t.textContent.includes('Stockroom'));
+        if (stockTab) showView('stock', stockTab);
+
+        openAddModal();
+        setTimeout(() => {
+          // Pre-fill URL and auto-detect store
+          document.getElementById('f-url').value = url;
+          autoFillStore();
+          // Pre-fill name if we have one from title/text
+          if (productName) {
+            document.getElementById('f-name').value = productName;
+            updatePriceLinks();
+          }
+          // Focus name field — user just needs to confirm/edit the name
+          const nameField = document.getElementById('f-name');
+          if (nameField) nameField.focus();
+          // Show a subtle hint
+          toast(`🛒 ${detectedStore ? detectedStore + ' link' : 'Link'} added — fill in the details`);
+        }, 200);
+      } else {
+        // No URL — fall back to Quick Add with the text
+        const name = title || text || '';
+        openQuickAdd();
+        if (name) {
+          const ta = document.getElementById('quick-add-input');
+          if (ta) { ta.value = name; updateQuickAddPreview(); }
+        }
       }
-      if (url) sessionStorage.setItem('shared_url', url);
     }
   }, 600);
 }

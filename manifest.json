@@ -1,54 +1,44 @@
 {
-  "name": "STOCKROOM — Household Consumables Tracker",
+  "name": "STOCKROOM",
   "short_name": "STOCKROOM",
-  "description": "Track household consumables, estimate stock levels, and get reminded before you run out.",
+  "description": "Household consumables tracker — never run out of anything",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#0f1117",
   "theme_color": "#0f1117",
   "orientation": "portrait-primary",
   "icons": [
-    {
-      "src": "icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
-    }
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
   ],
   "shortcuts": [
     {
       "name": "Quick Add",
       "short_name": "Quick Add",
-      "description": "Quickly add one or more items by name",
+      "description": "Add items quickly by name",
       "url": "./?action=quick-add",
-      "icons": [{ "src": "icon-192.png", "sizes": "192x192", "type": "image/png" }]
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192" }]
     },
     {
       "name": "Log Purchase",
       "short_name": "Log Purchase",
       "description": "Log a purchase for an existing item",
       "url": "./?action=log-purchase",
-      "icons": [{ "src": "icon-192.png", "sizes": "192x192", "type": "image/png" }]
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192" }]
     },
     {
       "name": "Shopping List",
-      "short_name": "Shopping List",
+      "short_name": "Shopping",
       "description": "View items running low",
       "url": "./?action=shopping",
-      "icons": [{ "src": "icon-192.png", "sizes": "192x192", "type": "image/png" }]
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192" }]
     },
     {
       "name": "Scan Barcode",
       "short_name": "Scan",
-      "description": "Scan a product barcode to add or log an item",
+      "description": "Scan a product barcode",
       "url": "./?action=scan",
-      "icons": [{ "src": "icon-192.png", "sizes": "192x192", "type": "image/png" }]
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192" }]
     }
   ],
   "share_target": {
@@ -56,10 +46,8 @@
     "method": "GET",
     "params": {
       "title": "title",
-      "text":  "text",
-      "url":   "url"
+      "text": "text",
+      "url": "url"
     }
-  },
-  "categories": ["lifestyle", "utilities"],
-  "screenshots": []
+  }
 }
