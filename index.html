@@ -88,7 +88,15 @@
   .view { display: none; }
   .view.active { display: block; }
 
-  /* ── View Transitions API ── */
+  /* ── HOUSEHOLD PRESENCE ── */
+  #presence-bar { display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+  .presence-avatar { width:28px; height:28px; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:11px; font-weight:700; border:2px solid var(--bg); box-shadow:0 2px 8px rgba(0,0,0,0.3); transition:all 0.3s; cursor:default; position:relative; flex-shrink:0; }
+  .presence-avatar .presence-tooltip { position:absolute; bottom:calc(100% + 6px); left:50%; transform:translateX(-50%); background:var(--surface); border:1px solid var(--border); border-radius:6px; padding:4px 8px; font-size:11px; white-space:nowrap; pointer-events:none; opacity:0; transition:opacity 0.15s; }
+  .presence-avatar:hover .presence-tooltip { opacity:1; }
+  .presence-dot { width:8px; height:8px; border-radius:50%; background:var(--ok); border:2px solid var(--bg); position:absolute; bottom:-1px; right:-1px; }
+
+  @keyframes presence-pulse { 0%,100% { opacity:1; } 50% { opacity:0.5; } }
+  .presence-avatar.shopping .presence-dot { background:var(--accent); animation:presence-pulse 1.5s infinite; }
   @keyframes vt-slide-in-right  { from { transform: translateX(28px);  opacity: 0; } to { transform: translateX(0); opacity: 1; } }
   @keyframes vt-slide-in-left   { from { transform: translateX(-28px); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
   @keyframes vt-slide-out-right { from { transform: translateX(0); opacity: 1; } to { transform: translateX(28px);  opacity: 0; } }
@@ -744,6 +752,7 @@
 <div id="app-header">
   <div class="logo" style="cursor:pointer" onclick="openProfilePicker()" title="Switch household profile">STOCKROOM <span id="profile-label">/ HOUSEHOLD TRACKER</span></div>
   <div style="display:flex;align-items:center;gap:8px">
+    <div id="presence-bar" style="display:none"></div>
     <div id="sync-pill" class="sync-pill pending">
       <div class="sync-dot"></div>
       <span id="sync-label">Local only</span>
@@ -1186,6 +1195,28 @@
         </div>
       </div>
     </div>
+    <div class="settings-card">
+      <h3>👥 Household Mode</h3>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:14px;line-height:1.6">See who else is using the app in real time. Avatars appear in the header and the shopping list updates live when someone marks an item delivered.</p>
+      <div class="setting-row">
+        <div class="setting-info"><h4>Enable household mode</h4><p>Shows live presence for all household members</p></div>
+        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
+          <input type="checkbox" id="household-mode-toggle" onchange="saveHouseholdSettings()" style="width:18px;height:18px;accent-color:var(--accent)">
+        </label>
+      </div>
+      <div id="household-settings-body" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--glass-border)">
+        <div class="form-group">
+          <label class="form-label">Your display name</label>
+          <input class="form-input" id="household-display-name" type="text" placeholder="e.g. Pete" maxlength="20" autocomplete="off" oninput="saveHouseholdSettings()">
+        </div>
+        <div class="form-group" style="margin-top:10px">
+          <label class="form-label">Colour</label>
+          <div id="household-colour-picker" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"></div>
+        </div>
+        <div id="household-status" style="margin-top:12px;font-size:12px;color:var(--muted);font-family:var(--mono)"></div>
+      </div>
+    </div>
+
     <div class="settings-card">
       <h3>ℹ️ About</h3>
       <p style="font-size:13px;color:var(--muted);line-height:1.8">
@@ -2095,7 +2126,8 @@ async function saveData() {
   if (!Array.isArray(items)) { console.error('stockroom: items is not an array, aborting save'); return; }
   await dbPut('items', 'items', items);
   if (activeProfile) await saveCurrentProfile();
-  registerBackgroundSync(); // queue a background sync in case we're offline
+  registerBackgroundSync();
+  bcPost({ type: 'DATA_CHANGED' });
 }
 
 async function saveSettings() {
@@ -2114,6 +2146,7 @@ async function saveSettings() {
 async function _saveSettings() {
   // Internal: save settings without triggering UI side effects
   await dbPut('settings', 'settings', settings);
+  bcPost({ type: 'SETTINGS_CHANGED' });
 }
 
 // Stamp updatedAt on an item whenever it's modified
@@ -4444,6 +4477,7 @@ async function _applyReplacedLocally(reminderId, date) {
     renderReminders();
     setTimeout(syncAll, 400);
     showToast('✅ Marked as replaced');
+    bcPost({ type: 'REMINDER_REPLACED', reminderId, date });
   }
 }
 
@@ -5378,11 +5412,61 @@ if ('serviceWorker' in navigator) {
       _applyReplacedLocally(reminderId, date);
     }
     if (event.data?.type === 'BG_SYNC') {
-      // Background sync fired while app was open — run sync now
       console.log('BG_SYNC received from SW');
       syncAll().catch(e => console.warn('BG_SYNC syncAll failed:', e));
     }
   });
+}
+
+// ── BroadcastChannel — cross-tab sync ────────────────────
+// When any tab saves data, all other open tabs update instantly.
+// Zero server cost, works natively in Chrome/Firefox/Safari.
+const _bc = ('BroadcastChannel' in window) ? new BroadcastChannel('stockroom') : null;
+
+// Message types:
+//   { type: 'DATA_CHANGED' }         — items changed, reload from IDB and re-render
+//   { type: 'REMINDER_REPLACED', reminderId, date } — reminder marked done in another tab
+//   { type: 'GROCERY_CHANGED' }      — grocery list changed
+//   { type: 'SETTINGS_CHANGED' }     — settings updated
+
+if (_bc) {
+  _bc.onmessage = async event => {
+    const { type } = event.data;
+
+    if (type === 'DATA_CHANGED') {
+      // Another tab saved items — reload from IndexedDB and re-render
+      const fresh = await dbGet('items', 'items');
+      if (fresh && Array.isArray(fresh)) {
+        items = fresh;
+        scheduleRender('grid', 'dashboard', 'shopping', 'sns', 'filters');
+      }
+    }
+
+    if (type === 'REMINDER_REPLACED') {
+      const { reminderId, date } = event.data;
+      await _applyReplacedLocally(reminderId, date);
+    }
+
+    if (type === 'GROCERY_CHANGED') {
+      const fresh = await dbGet('groceries', 'items');
+      if (fresh) {
+        groceryItems = fresh;
+        renderGrocery();
+      }
+    }
+
+    if (type === 'SETTINGS_CHANGED') {
+      const fresh = await dbGet('settings', 'settings');
+      if (fresh) {
+        settings = { ...settings, ...fresh };
+        scheduleRender('settings-ui');
+      }
+    }
+  };
+}
+
+function bcPost(message) {
+  try { _bc?.postMessage(message); } catch(e) {}
 }
 
 // ── Register background sync after every save ─────────────
@@ -7337,7 +7421,7 @@ function renderShoppingList() {
   const container = document.getElementById('shopping-content');
 
   if (shoppingItems.length === 0) {
-    container.innerHTML = `<div class="shopping-empty">
+    container.innerHTML = getShoppingPresenceBar() + `<div class="shopping-empty">
       <div style="font-size:48px;margin-bottom:16px">🎉</div>
       <h3 style="font-size:18px;color:var(--text);margin-bottom:8px">You're all stocked up!</h3>
       <p style="font-size:14px;line-height:1.7">No items are running out within ${shoppingDays} days for the selected stores.</p>
@@ -7357,7 +7441,7 @@ function renderShoppingList() {
   // If all stores, also group items with no store
   const q = encodeURIComponent;
 
-  container.innerHTML = Object.entries(byStore).map(([store, entries]) => {
+  container.innerHTML = getShoppingPresenceBar() + Object.entries(byStore).map(([store, entries]) => {
     const itemsHTML = entries.map(({ item, daysLeft, pct }) => {
       const runOutDate = new Date(Date.now() + daysLeft * 86400000)
         .toLocaleDateString('en-GB', { day:'numeric', month:'short', year:'numeric' });
@@ -8793,6 +8877,7 @@ async function loadGrocery() {
 async function saveGrocery() {
   await dbPut('groceries', 'items', groceryItems);
   if (driveConnected || dropboxConnected) setTimeout(syncAll, 600);
+  bcPost({ type: 'GROCERY_CHANGED' });
 }
 
 async function saveGroceryDepts() {
@@ -9195,6 +9280,217 @@ async function checkGroceryRecurring() {
   if (changed) { saveGrocery(); renderGrocery(); }
 }
 
+// ═══════════════════════════════════════════════════════════
+//  HOUSEHOLD PRESENCE
+// ═══════════════════════════════════════════════════════════
+
+const PRESENCE_COLOURS = [
+  '#e8a838','#5b8dee','#4cbb8a','#e85050','#b45dee',
+  '#ee8c5b','#5bdee8','#dee85b','#ee5bab','#5beeaa',
+];
+
+let _householdEnabled  = false;
+let _householdName     = '';
+let _householdColour   = PRESENCE_COLOURS[0];
+let _presenceSSE       = null;
+let _presencePingTimer = null;
+let _currentViewName   = 'stock';
+let _otherPresence     = {}; // { userId: { name, colour, view, ts } }
+
+// ── Persistence ───────────────────────────────────────────
+function loadHouseholdSettings() {
+  try {
+    const raw = localStorage.getItem('stockroom_household');
+    if (!raw) return;
+    const d = JSON.parse(raw);
+    _householdEnabled = !!d.enabled;
+    _householdName    = d.name    || '';
+    _householdColour  = d.colour  || PRESENCE_COLOURS[0];
+  } catch(e) {}
+}
+
+function saveHouseholdSettings() {
+  _householdEnabled = document.getElementById('household-mode-toggle')?.checked || false;
+  _householdName    = (document.getElementById('household-display-name')?.value || '').trim();
+  // colour saved via pickHouseholdColour
+  try {
+    localStorage.setItem('stockroom_household', JSON.stringify({
+      enabled: _householdEnabled,
+      name:    _householdName,
+      colour:  _householdColour,
+    }));
+  } catch(e) {}
+  document.getElementById('household-settings-body').style.display = _householdEnabled ? 'block' : 'none';
+  if (_householdEnabled) connectPresence();
+  else disconnectPresence();
+}
+
+function pickHouseholdColour(colour) {
+  _householdColour = colour;
+  renderHouseholdColourPicker();
+  saveHouseholdSettings();
+  pushPresence();
+}
+
+function renderHouseholdColourPicker() {
+  const el = document.getElementById('household-colour-picker');
+  if (!el) return;
+  el.innerHTML = PRESENCE_COLOURS.map(c => `
+    <div onclick="pickHouseholdColour('${c}')"
+      style="width:28px;height:28px;border-radius:50%;background:${c};cursor:pointer;
+             border:3px solid ${c === _householdColour ? 'var(--text)' : 'transparent'};
+             transition:border-color 0.15s;box-shadow:0 2px 6px rgba(0,0,0,0.3)"></div>
+  `).join('');
+}
+
+function initHouseholdSettingsUI() {
+  loadHouseholdSettings();
+  const toggle = document.getElementById('household-mode-toggle');
+  const nameEl = document.getElementById('household-display-name');
+  if (toggle) toggle.checked = _householdEnabled;
+  if (nameEl) nameEl.value   = _householdName;
+  document.getElementById('household-settings-body').style.display = _householdEnabled ? 'block' : 'none';
+  renderHouseholdColourPicker();
+  if (_householdEnabled) connectPresence();
+}
+
+// ── User ID ───────────────────────────────────────────────
+function getHouseholdUserId() {
+  let id = localStorage.getItem('stockroom_user_id');
+  if (!id) {
+    id = 'u_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+    localStorage.setItem('stockroom_user_id', id);
+  }
+  return id;
+}
+
+// ── SSE connection ────────────────────────────────────────
+function connectPresence() {
+  if (!WORKER_URL || !_householdEnabled) return;
+  disconnectPresence(); // close any existing
+
+  const userId = getHouseholdUserId();
+  const url    = `${WORKER_URL}/presence-stream?userId=${encodeURIComponent(userId)}`;
+
+  try {
+    _presenceSSE = new EventSource(url);
+
+    _presenceSSE.onmessage = e => {
+      try {
+        const data = JSON.parse(e.data);
+        if (data.type === 'presence') {
+          _otherPresence = {};
+          const myId = getHouseholdUserId();
+          (data.users || []).forEach(u => {
+            if (u.userId !== myId) _otherPresence[u.userId] = u;
+          });
+          renderPresenceAvatars();
+          // Update shopping list if we're on it — items may have changed
+          if (_currentViewName === 'shopping' || document.getElementById('shopping-panel')?.style.display !== 'none') {
+            scheduleRender('shopping');
+          }
+        }
+      } catch(err) { console.warn('Presence parse error', err); }
+    };
+
+    _presenceSSE.onerror = () => {
+      // SSE dropped — try to reconnect after 10s
+      disconnectPresence();
+      setTimeout(() => { if (_householdEnabled) connectPresence(); }, 10000);
+    };
+
+    // Push our own presence immediately and then every 25s
+    pushPresence();
+    _presencePingTimer = setInterval(pushPresence, 25000);
+
+    const statusEl = document.getElementById('household-status');
+    if (statusEl) statusEl.textContent = '🟢 Connected — presence active';
+  } catch(e) {
+    console.warn('Presence SSE failed:', e);
+  }
+}
+
+function disconnectPresence() {
+  if (_presenceSSE) { _presenceSSE.close(); _presenceSSE = null; }
+  clearInterval(_presencePingTimer);
+  _otherPresence = {};
+  renderPresenceAvatars();
+  const statusEl = document.getElementById('household-status');
+  if (statusEl) statusEl.textContent = '';
+}
+
+async function pushPresence() {
+  if (!WORKER_URL || !_householdEnabled) return;
+  const name   = _householdName || settings.email?.split('@')[0] || 'You';
+  const initials = name.slice(0,2).toUpperCase();
+  try {
+    await fetch(`${WORKER_URL}/presence-update`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId:   getHouseholdUserId(),
+        name,
+        initials,
+        colour:   _householdColour,
+        view:     _currentViewName,
+        ts:       new Date().toISOString(),
+      }),
+    });
+  } catch(e) { /* offline — ignore */ }
+}
+
+// ── Presence avatars ──────────────────────────────────────
+function renderPresenceAvatars() {
+  const bar = document.getElementById('presence-bar');
+  if (!bar) return;
+  const users = Object.values(_otherPresence);
+  if (!users.length) { bar.style.display = 'none'; return; }
+  bar.style.display = 'flex';
+  bar.innerHTML = users.map(u => {
+    const viewLabel = { stock:'Stockroom', grocery:'Groceries', shopping:'Shopping', reminders:'Reminders', savings:'Savings', report:'Report', settings:'Settings' }[u.view] || u.view;
+    const isShopping = u.view === 'shopping';
+    return `<div class="presence-avatar ${isShopping ? 'shopping' : ''}"
+      style="background:${u.colour};color:#111"
+      title="${u.name} — viewing ${viewLabel}">
+      ${u.initials}
+      <div class="presence-dot"></div>
+      <div class="presence-tooltip">${esc(u.name)} · ${viewLabel}</div>
+    </div>`;
+  }).join('');
+}
+
+// Hook into showView and switchTo* to push presence on navigation
+const _origShowView = showView;
+function showView(name, btn) {
+  _currentViewName = name;
+  _origShowView(name, btn);
+  if (_householdEnabled) pushPresence();
+}
+const _origSwitchToShopping = switchToShopping;
+function switchToShopping() {
+  _currentViewName = 'shopping';
+  _origSwitchToShopping();
+  if (_householdEnabled) pushPresence();
+}
+const _origSwitchToStock = switchToStock;
+function switchToStock() {
+  _currentViewName = 'stock';
+  _origSwitchToStock();
+  if (_householdEnabled) pushPresence();
+}
+
+// ── Shopping list: show who else is viewing ───────────────
+function getShoppingPresenceBar() {
+  const shoppers = Object.values(_otherPresence).filter(u => u.view === 'shopping');
+  if (!shoppers.length) return '';
+  return `<div style="display:flex;align-items:center;gap:8px;padding:10px 14px;background:rgba(232,168,56,0.08);border:1px solid rgba(232,168,56,0.2);border-radius:10px;margin-bottom:14px;font-size:13px">
+    <div style="display:flex;gap:4px">${shoppers.map(u =>
+      `<div class="presence-avatar shopping" style="background:${u.colour};color:#111;width:24px;height:24px;font-size:10px">${u.initials}<div class="presence-dot"></div></div>`
+    ).join('')}</div>
+    <span style="color:var(--warn)">${shoppers.map(u=>esc(u.name)).join(', ')} ${shoppers.length===1?'is':'are'} also on the shopping list</span>
+  </div>`;
+}
+
 async function init() {
   // Load all data from IndexedDB (migrates from localStorage on first run)
   await loadData();
@@ -9269,6 +9565,7 @@ async function init() {
 
   scheduleRender(...RENDER_REGIONS);
   loadNotifSettings();
+  initHouseholdSettingsUI();
   await loadReminders();
   await loadGrocery();
   await checkGroceryRecurring();
