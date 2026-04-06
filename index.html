@@ -8814,17 +8814,15 @@ async function syncNow() {
         remote.deletedIds.forEach(id => merged.add(id));
         await saveDeletedIds(merged);
       }
-      // Merge household directory — adds any new households created on other devices
+      // Merge household directory
       if (remote.householdDir && typeof remote.householdDir === 'object') {
         const localProfiles = await getProfiles();
         let changed = false;
         Object.entries(remote.householdDir).forEach(([key, meta]) => {
           if (!localProfiles[key]) {
-            // New household from another device — add skeleton entry
             localProfiles[key] = { name: meta.name, colour: meta.colour, items: [], settings: {}, reminders: [], groceries: [], departments: [] };
             changed = true;
           } else {
-            // Update name/colour if changed
             if (meta.name && localProfiles[key].name !== meta.name) { localProfiles[key].name = meta.name; changed = true; }
             if (meta.colour && localProfiles[key].colour !== meta.colour) { localProfiles[key].colour = meta.colour; changed = true; }
           }
@@ -8832,6 +8830,22 @@ async function syncNow() {
         if (changed) {
           await saveProfiles(localProfiles);
           renderSettingsHouseholdList();
+        }
+      }
+      // Restore share targets from Drive if KV was wiped
+      if (remote.shareTargets && Array.isArray(remote.shareTargets) && remote.shareTargets.length) {
+        _shareTargets = remote.shareTargets;
+        renderShareTargetsList();
+        // Re-seed KV so the backend can validate codes again
+        if (WORKER_URL && isOwner()) {
+          remote.shareTargets.forEach(t => {
+            if (t.code) {
+              fetch(`${WORKER_URL}/share/restore`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(t),
+              }).catch(() => {});
+            }
+          });
         }
       }
       scheduleRender(...RENDER_REGIONS);
@@ -8844,8 +8858,8 @@ async function syncNow() {
     const tombstones   = await loadDeletedIds();
     tombstones.forEach(id => { if (uploadedIds.has(id)) tombstones.delete(id); });
     await saveDeletedIds(tombstones);
-    // Include household directory (names/colours only, not full item data)
-    // so the household list survives reloads and multi-device sync
+    // Include household directory and share targets in Drive payload
+    // so both survive KV wipes and are restored on reconnect
     const allProfiles  = await getProfiles();
     const householdDir = Object.fromEntries(
       Object.entries(allProfiles).map(([k, p]) => [k, { name: p.name, colour: p.colour }])
@@ -8855,6 +8869,7 @@ async function syncNow() {
       groceries: groceryItems, departments: groceryDepts,
       reminders, deletedIds: [...tombstones],
       householdDir, activeProfile,
+      shareTargets: _shareTargets, // persists share targets to Drive
     });
     if (_shareState) await proxyWriteDrive(payload);
     else               await drivePush(payload);
