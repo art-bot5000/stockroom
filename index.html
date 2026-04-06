@@ -1220,36 +1220,20 @@
           <div id="household-colour-picker" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"></div>
         </div>
 
-        <!-- Shared file section -->
-        <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--glass-border)">
-          <h4 style="font-size:13px;font-weight:700;margin-bottom:10px">📂 Shared Data File</h4>
-          <div id="household-share-status" style="font-size:13px;color:var(--muted);margin-bottom:12px;line-height:1.6"></div>
+        <!-- Share Targets — owner only -->
+        <div id="share-targets-section" style="margin-top:16px;padding-top:16px;border-top:1px solid var(--glass-border)">
+          <h4 style="font-size:13px;font-weight:700;margin-bottom:4px">👥 Share Access</h4>
+          <p style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.5">Give others access to specific households. Up to 5 share targets. Each gets a unique link.</p>
+          <div id="share-targets-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px"></div>
+          <button class="btn btn-ghost btn-sm" id="add-share-target-btn" onclick="openAddShareTarget()">+ Add person</button>
+        </div>
 
-          <!-- Owner: generate invite -->
-          <div id="household-owner-section">
-            <button class="btn btn-ghost btn-sm" onclick="createInviteCode()" style="margin-bottom:8px">🔗 Generate invite code</button>
-            <div id="invite-code-display" style="display:none;margin-top:8px">
-              <div style="font-family:var(--mono);font-size:22px;letter-spacing:6px;font-weight:700;color:var(--accent);text-align:center;padding:16px;background:var(--surface);border-radius:10px;border:1px solid var(--border)" id="invite-code-value"></div>
-              <p style="font-size:12px;color:var(--muted);text-align:center;margin-top:6px">Share this code with your household. Valid for 24 hours.</p>
-              <button class="btn btn-ghost btn-sm full" style="margin-top:6px" onclick="copyInviteCode()">📋 Copy code</button>
-            </div>
-          </div>
-
-          <!-- Partner: join via code -->
-          <div id="household-join-section" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--glass-border)">
-            <p style="font-size:12px;color:var(--muted);margin-bottom:8px">Have an invite code? Enter it below to sync to the shared file.</p>
-            <div style="display:flex;gap:8px">
-              <input class="form-input" id="invite-code-input" type="text" placeholder="e.g. A1B2C3" maxlength="6" autocomplete="off"
-                style="text-transform:uppercase;font-family:var(--mono);letter-spacing:3px;font-size:16px;text-align:center">
-              <button class="btn btn-primary btn-sm" onclick="joinHousehold()">Join</button>
-            </div>
-          </div>
-
-          <!-- Joined: leave household -->
-          <div id="household-joined-section" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--glass-border)">
-            <p style="font-size:12px;color:var(--ok);margin-bottom:8px">✓ Syncing to shared household file</p>
-            <button class="btn btn-ghost btn-sm" onclick="leaveHousehold()" style="color:var(--danger);border-color:var(--danger)">Leave household</button>
-          </div>
+        <!-- Joined: current share state (shown when this device has joined someone else) -->
+        <div id="household-joined-section" style="display:none;margin-top:16px;padding-top:16px;border-top:1px solid var(--glass-border)">
+          <h4 style="font-size:13px;font-weight:700;margin-bottom:8px">🔗 Joined Household</h4>
+          <p style="font-size:12px;color:var(--ok);margin-bottom:4px" id="joined-status-text">✓ Syncing to shared household</p>
+          <p style="font-size:12px;color:var(--muted);margin-bottom:10px">To manage your own household, connect Google Drive in Cloud Sync above.</p>
+          <button class="btn btn-ghost btn-sm" onclick="leaveShare()" style="color:var(--danger);border-color:var(--danger)">Leave shared household</button>
         </div>
 
         <div id="household-status" style="margin-top:12px;font-size:12px;color:var(--muted);font-family:var(--mono)"></div>
@@ -1665,6 +1649,39 @@
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('household-edit-modal')">Cancel</button>
       <button class="btn btn-primary" onclick="saveHouseholdEdit()">Save</button>
+    </div>
+  </div>
+</div>
+
+<!-- Share Target Modal -->
+<div class="modal-backdrop" id="share-target-modal">
+  <div class="modal" style="max-width:420px;max-height:80vh;overflow-y:auto">
+    <h2 id="share-target-modal-title">👤 Add Person</h2>
+    <input type="hidden" id="share-target-code">
+    <div class="form-group" style="margin-bottom:12px">
+      <label class="form-label">Their name</label>
+      <input class="form-input" id="share-target-name" type="text" maxlength="30" placeholder="e.g. Sarah, Mum, Cleaner">
+    </div>
+    <div class="form-group" style="margin-bottom:16px">
+      <label class="form-label">Role</label>
+      <div style="display:flex;gap:8px;flex-wrap:wrap" id="share-target-type-picker">
+        <button class="share-type-btn active" data-type="family" onclick="selectShareType('family',this)" style="padding:8px 14px;border-radius:8px;border:2px solid var(--accent);background:rgba(232,168,56,0.1);color:var(--accent);font-size:13px;cursor:pointer">👨‍👩‍👧 Family</button>
+        <button class="share-type-btn" data-type="cleaner" onclick="selectShareType('cleaner',this)" style="padding:8px 14px;border-radius:8px;border:2px solid var(--border);background:transparent;color:var(--muted);font-size:13px;cursor:pointer">🧹 Cleaner</button>
+        <button class="share-type-btn" data-type="guest" onclick="selectShareType('guest',this)" style="padding:8px 14px;border-radius:8px;border:2px solid var(--border);background:transparent;color:var(--muted);font-size:13px;cursor:pointer">👤 Guest</button>
+      </div>
+    </div>
+    <div class="form-group" style="margin-bottom:16px">
+      <label class="form-label" style="margin-bottom:8px">Access per household</label>
+      <div id="share-household-perms" style="display:flex;flex-direction:column;gap:10px"></div>
+    </div>
+    <div id="share-link-section" style="display:none;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:14px;margin-bottom:16px">
+      <div style="font-size:11px;color:var(--muted);font-family:var(--mono);margin-bottom:6px">SHARE LINK</div>
+      <div id="share-link-value" style="font-size:12px;word-break:break-all;color:var(--accent);font-family:var(--mono);margin-bottom:8px"></div>
+      <button class="btn btn-ghost btn-sm full" onclick="copyShareLink()">📋 Copy link</button>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('share-target-modal')">Cancel</button>
+      <button class="btn btn-primary" id="share-target-save-btn" onclick="saveShareTarget()">Create &amp; get link</button>
     </div>
   </div>
 </div>
@@ -3681,7 +3698,105 @@ function scanChooserFullAdd() {
 }
 
 
+async function handleShareJoinLink(code) {
+  // Resolve the code to get permissions
+  updateSyncPill('syncing');
+  try {
+    const data = await joinViaShareCode(code);
+
+    // For existing users who are already set up — join silently
+    const seen = localStorage.getItem('stockroom_seen');
+    if (seen) {
+      applyTabPermissions();
+      toast(`Joined ${data.ownerName || 'household'}'s STOCKROOM ✓`);
+      // Sync to load shared data
+      await syncAll();
+      scheduleRender(...RENDER_REGIONS);
+      // Show the join confirmation modal
+      showShareJoinConfirm(data);
+      return;
+    }
+
+    // For new users — intercept the wizard to show join screen first
+    showShareWizard(data);
+  } catch(err) {
+    updateSyncPill('error');
+    toast('Invalid invite link — ' + err.message);
+  }
+}
+
+function showShareWizard(shareData) {
+  // Replace wizard step 1 with join screen
+  const wizard = document.getElementById('wizard');
+  if (!wizard) return;
+  wizard.style.display = 'flex';
+
+  const step1 = document.getElementById('wizard-step-1');
+  if (step1) {
+    step1.innerHTML = `
+      <div style="font-size:52px;margin-bottom:12px">🏠</div>
+      <h1 style="font-size:24px;font-weight:700;margin-bottom:8px">You're invited!</h1>
+      <p style="color:var(--muted);font-size:14px;line-height:1.7;margin-bottom:24px">
+        <strong style="color:var(--text)">${esc(shareData.ownerName || 'Someone')}</strong> has shared their STOCKROOM with you.
+        You'll have access to ${Object.keys(shareData.households || {}).length} household${Object.keys(shareData.households || {}).length !== 1 ? 's' : ''}.
+      </p>
+      <div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:24px;text-align:left">
+        <div style="font-size:12px;color:var(--muted);font-family:var(--mono);margin-bottom:8px">YOUR ACCESS</div>
+        ${Object.entries(shareData.households || {}).map(([hKey, perms]) => `
+          <div style="margin-bottom:8px">
+            <div style="font-size:13px;font-weight:700;margin-bottom:4px">🏠 ${esc(hKey === 'default' ? 'Home' : hKey)}</div>
+            <div style="display:flex;gap:6px;flex-wrap:wrap">
+              ${Object.entries(perms).filter(([,v]) => v !== 'none').map(([s,v]) =>
+                `<span style="font-size:11px;padding:2px 8px;border-radius:99px;background:${v==='rw'?'rgba(76,187,138,0.15)':'rgba(91,141,238,0.15)'};color:${v==='rw'?'var(--ok)':'var(--accent)'};font-family:var(--mono)">${SECTION_LABELS[s]||s} ${v==='rw'?'✏️':'👁'}</span>`
+              ).join('')}
+            </div>
+          </div>
+        `).join('')}
+      </div>
+      <button class="btn btn-primary btn-xl full" style="margin-bottom:10px" onclick="acceptShareAndContinue()">✓ Accept &amp; Open STOCKROOM</button>
+      <button class="btn btn-ghost btn-xl full" style="font-size:13px;margin-bottom:10px" onclick="wizardNext()">Set up my own account instead →</button>
+      <p style="font-size:11px;color:var(--muted)">You can connect your own Google Drive later to save your own household data separately.</p>
+    `;
+    step1.classList.add('active');
+  }
+}
+
+async function acceptShareAndContinue() {
+  localStorage.setItem('stockroom_seen', '1');
+  const wizard = document.getElementById('wizard');
+  if (wizard) wizard.style.display = 'none';
+  applyTabPermissions();
+  await syncAll();
+  scheduleRender(...RENDER_REGIONS);
+  toast(`Welcome to STOCKROOM ✓`);
+}
+
+function showShareJoinConfirm(shareData) {
+  // Brief modal confirming what they have access to
+  const html = `
+    <div style="text-align:center;padding:8px 0 16px">
+      <div style="font-size:40px;margin-bottom:12px">✓</div>
+      <h3 style="margin-bottom:8px">Joined ${esc(shareData.ownerName || 'household')}'s STOCKROOM</h3>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:16px">
+        You have access as a <strong>${esc(shareData.type || 'guest')}</strong>.
+        ${!isOwner() && !driveConnected ? `<br><br><a href="#" onclick="connectDrive();closeModal('share-confirm-modal')" style="color:var(--accent)">Connect your own Google Drive</a> to manage your own household.` : ''}
+      </p>
+      <button class="btn btn-primary full" onclick="closeModal('share-confirm-modal')">Got it</button>
+    </div>`;
+  // Use a simple toast since we don't want another modal
+  toast(`✓ Joined ${shareData.ownerName || 'household'}'s STOCKROOM as ${shareData.type || 'guest'}`);
+}
+
 function handleURLAction() {
+  // ── Share join link: ?join=CODE ───────────────────────────
+  const joinParams = new URLSearchParams(location.search);
+  const joinCode   = joinParams.get('join');
+  if (joinCode) {
+    history.replaceState(null, '', location.pathname);
+    handleShareJoinLink(joinCode.toUpperCase());
+    return;
+  }
+
   // Check for incoming shared item first
   if (checkIncomingItem()) return;
 
@@ -4476,6 +4591,7 @@ function openEditReminderModal(id) {
 }
 
 async function saveReminder() {
+  if (!canWrite("reminders")) { showLockBanner("reminders"); return; }
   const name = document.getElementById('r-name').value.trim();
   if (!name) { toast('Enter a name for this reminder'); return; }
 
@@ -4525,6 +4641,7 @@ async function saveReminder() {
 }
 
 async function deleteReminder(id) {
+  if (!canWrite("reminders")) { showLockBanner("reminders"); return; }
   if (!confirm('Delete this reminder?')) return;
   reminders = reminders.filter(r => r.id !== id);
   await saveReminders();
@@ -4549,6 +4666,7 @@ function openLogReplacementModal(id) {
 }
 
 async function confirmLogReplacement() {
+  if (!canWrite("reminders")) { showLockBanner("reminders"); return; }
   const date     = document.getElementById('log-replacement-date').value || today();
   const id       = loggingReminderId;
   const isItem   = id.startsWith('item_');
@@ -4709,6 +4827,7 @@ async function sendReminderActionNotification(r) {
 
 
 async function markOrdered(id) {
+  if (!canWrite("stockroom")) { showLockBanner("stockroom"); return; }
   const item = items.find(i => i.id === id);
   if (!item) return;
   item.ordered   = true;
@@ -4721,6 +4840,7 @@ async function markOrdered(id) {
 }
 
 async function unmarkOrdered(id) {
+  if (!canWrite("stockroom")) { showLockBanner("stockroom"); return; }
   const item = items.find(i => i.id === id);
   if (!item) return;
   item.ordered   = false;
@@ -4796,6 +4916,7 @@ async function loadProfile(key) {
   updateProfileLabel();
   scheduleRender(...RENDER_REGIONS);
   updateSyncUI();
+  applyTabPermissions();
 }
 
 async function saveCurrentProfile() {
@@ -5165,6 +5286,7 @@ function renderHealthDashboard() {
 //  DELETE LOG ENTRIES
 // ═══════════════════════════════════════════
 async function deleteLogEntry(itemId, logId) {
+  if (!canWrite("stockroom")) { showLockBanner("stockroom"); return; }
   const item = items.find(i => i.id === itemId);
   if (!item) return;
   item.logs = (item.logs||[]).filter(l => l.id !== logId);
@@ -6230,6 +6352,7 @@ function cardTagsHTML(item) {
 }
 
 async function toggleItemTag(itemId, tagIndex) {
+  if (!canWrite("stockroom")) { showLockBanner("stockroom"); return; }
   const item = items.find(i => i.id === itemId);
   if (!item) return;
   if (!item.tags) item.tags = [];
@@ -6324,6 +6447,7 @@ function showAddTagInput(barId) {
 }
 
 async function addTag(name) {
+  if (!isOwner()) { toast("Settings are read-only"); return; }
   const tags = getCustomTags();
   const firstEmpty = tags.findIndex(t => !t || !t.trim());
   if (firstEmpty === -1) return;
@@ -6337,6 +6461,7 @@ async function addTag(name) {
 }
 
 async function deleteTag(index) {
+  if (!isOwner()) { toast("Settings are read-only"); return; }
   if (!confirm(`Remove tag "${getCustomTags()[index]}"? Items will lose this tag.`)) return;
   const tags = getCustomTags();
   tags[index] = '';
@@ -6608,6 +6733,7 @@ function frequencyInsightHTML(item) {
 }
 
 async function applyFrequencySuggestion(id, avgMonths) {
+  if (!canWrite("stockroom")) { showLockBanner("stockroom"); return; }
   const item = items.find(i => i.id === id);
   if (!item) return;
   const rounded = Math.max(0.5, Math.round(avgMonths * 2) / 2); // round to nearest 0.5
@@ -6981,6 +7107,7 @@ function emailReport() {
 
 
 async function rateItem(id, val) {
+  if (!canWrite("stockroom")) { showLockBanner("stockroom"); return; }
   const item = items.find(i => i.id === id);
   if (!item) return;
   item.rating = item.rating === val ? null : val;
@@ -7207,6 +7334,7 @@ function updateStockCountPreview(item) {
 }
 
 async function saveStockCount() {
+  if (!canWrite("stockroom")) { showLockBanner("stockroom"); return; }
   const item = items.find(i => i.id === stockCountId);
   if (!item) return;
   const val = document.getElementById('sc-remaining').value.trim();
@@ -7402,6 +7530,7 @@ function renderSavingsView() {
 }
 
 async function toggleSnS(id) {
+  if (!canWrite("savings")) { showLockBanner("savings"); return; }
   const item = items.find(i => i.id === id);
   if (!item) return;
   item.subscribeAndSave = !item.subscribeAndSave;
@@ -7537,6 +7666,13 @@ function showShoppingListInline() { switchToShopping(); }
 
 function showView(name, btn) {
   _currentViewName = name;
+  // Check tab access for shared users
+  const sectionMap = { grocery:'groceries', reminders:'reminders', savings:'savings', report:'report', stock:'stockroom', shopping:'stockroom' };
+  const section    = sectionMap[name];
+  if (section && !canView(section)) {
+    showLockBanner(section);
+    return;
+  }
   // Tab switches are instant — no transition (feels snappier on the tab bar)
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
@@ -7553,6 +7689,7 @@ function showView(name, btn) {
     document.getElementById('items-grid').style.display = '';
     document.getElementById('shopping-panel').style.display = 'none';
   }
+  if (name === 'settings') renderSettingsForUser();
   _currentView = name;
   if (_householdEnabled) pushPresence();
 }
@@ -7933,6 +8070,7 @@ function openLogPurchaseModal(id) {
 //  SAVE / DELETE
 // ═══════════════════════════════════════════
 async function saveItem() {
+  if (!canWrite("stockroom")) { showLockBanner("stockroom"); return; }
   const name = document.getElementById('f-name').value.trim();
   if (!name) { alert('Please enter a name for this item.'); return; }
   const startedUsing = document.getElementById('f-started-using').value || null;
@@ -8018,6 +8156,7 @@ async function saveItem() {
 }
 
 async function saveLog() {
+  if (!canWrite("stockroom")) { showLockBanner("stockroom"); return; }
   const item = items.find(i => i.id === loggingId);
   if (!item) return;
   if (!item.logs) item.logs = [];
@@ -8092,6 +8231,7 @@ function toggleDeliveredStarted() {
 }
 
 async function saveDelivered() {
+  if (!canWrite("stockroom")) { showLockBanner("stockroom"); return; }
   const item = items.find(i => i.id === deliveringId);
   if (!item) return;
 
@@ -8196,6 +8336,7 @@ function openStartedUsingModal(id) {
 }
 
 async function saveStartedUsing() {
+  if (!canWrite("stockroom")) { showLockBanner("stockroom"); return; }
   const item = items.find(i => i.id === startedUsingItemId);
   if (!item) return;
   const date = document.getElementById('started-using-date').value || today();
@@ -8246,6 +8387,7 @@ function exportData() {
 }
 
 async function importData(e) {
+  if (!isOwner()) { toast("Settings are read-only"); return; }
   const file = e.target.files[0];
   if (!file) return;
   const reader = new FileReader();
@@ -8264,6 +8406,7 @@ async function importData(e) {
 }
 
 async function clearAll() {
+  if (!isOwner()) { toast("Settings are read-only"); return; }
   if (!confirm('This will delete all items and purchase history. Are you sure?')) return;
   items = [];
   await saveData();
@@ -8569,8 +8712,9 @@ async function handleOAuthRedirect() {
 // No access token, no sessionStorage token, no re-auth needed.
 
 async function drivePull() {
-  const hParam = activeProfile && activeProfile !== 'default' ? `?household=${encodeURIComponent(activeProfile)}` : '';
-  const res = await fetch(`${WORKER_URL}/sync/pull${hParam}`);
+  const hParam = activeProfile && activeProfile !== 'default' ? `&household=${encodeURIComponent(activeProfile)}` : '';
+  const sParam = _shareState?.code ? `&share=${encodeURIComponent(_shareState.code)}` : '';
+  const res = await fetch(`${WORKER_URL}/sync/pull?1=1${hParam}${sParam}`);
   if (res.status === 503) throw new Error('NOT_CONNECTED');
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
@@ -8580,13 +8724,15 @@ async function drivePull() {
 }
 
 async function drivePush(payload) {
-  const hParam = activeProfile && activeProfile !== 'default' ? `?household=${encodeURIComponent(activeProfile)}` : '';
-  const res = await fetch(`${WORKER_URL}/sync/push${hParam}`, {
+  const hParam = activeProfile && activeProfile !== 'default' ? `&household=${encodeURIComponent(activeProfile)}` : '';
+  const sParam = _shareState?.code ? `&share=${encodeURIComponent(_shareState.code)}` : '';
+  const res = await fetch(`${WORKER_URL}/sync/push?1=1${hParam}${sParam}`, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
     body:    payload,
   });
   if (res.status === 503) throw new Error('NOT_CONNECTED');
+  if (res.status === 403) throw new Error('READ_ONLY');
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `Push failed: ${res.status}`);
@@ -8890,6 +9036,36 @@ async function signOutDrive() {
     scheduleRender('grid', 'dashboard');
     toast('Local data cleared');
   }
+}
+
+function renderSettingsForUser() {
+  if (isOwner()) return; // owner sees everything
+
+  // For shared users: show a banner, hide owner-only settings cards
+  const settingsView = document.getElementById('view-settings');
+  if (!settingsView) return;
+
+  // Add shared-user banner if not already present
+  if (!document.getElementById('shared-user-settings-banner')) {
+    const banner = document.createElement('div');
+    banner.id    = 'shared-user-settings-banner';
+    banner.style.cssText = 'background:rgba(91,141,238,0.08);border:1px solid rgba(91,141,238,0.2);border-radius:12px;padding:14px 16px;margin-bottom:16px;font-size:13px;line-height:1.6';
+    banner.innerHTML = `
+      <strong style="color:var(--accent)">👤 Shared access</strong> — You have joined ${esc(_shareState?.ownerName || 'a household')}'s STOCKROOM as a <strong>${esc(_shareState?.type || 'guest')}</strong>.<br>
+      <span style="color:var(--muted)">Some settings are managed by the owner.</span>
+      ${!driveConnected ? `<br><button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="connectDrive()">☁️ Connect your own Google Drive</button>` : ''}
+      <button class="btn btn-ghost btn-sm" style="margin-top:8px;color:var(--danger);border-color:var(--danger)" onclick="leaveShare()">Leave shared household</button>
+    `;
+    settingsView.insertBefore(banner, settingsView.firstChild);
+  }
+
+  // Hide owner-only cards: Cloud Sync, Household Mode sharing, Email Reminders, Notifications, Tags
+  // Shared users can see their own display preferences but not system settings
+  const ownerOnlyHeadings = ['Cloud Sync', 'Household Mode', 'Email Reminders', 'Push Notifications', 'Tags'];
+  document.querySelectorAll('#view-settings .settings-card h3').forEach(h3 => {
+    const isOwnerOnly = ownerOnlyHeadings.some(s => h3.textContent.includes(s));
+    if (isOwnerOnly) h3.closest('.settings-card').style.display = 'none';
+  });
 }
 
 function updateDriveUI() {
@@ -9220,6 +9396,7 @@ async function toggleGroceryCheck(id, cb) {
 }
 
 async function clearCheckedGrocery() {
+  if (!canWrite("groceries")) { showLockBanner("groceries"); return; }
   // For recurring items: reset check and bump addedAt; for non-recurring: remove
   groceryItems = groceryItems.filter(item => {
     if (!item.checked) return true;
@@ -9289,6 +9466,7 @@ function toggleGroceryRecurring() {
 }
 
 async function saveGroceryItem() {
+  if (!canWrite("groceries")) { showLockBanner("groceries"); return; }
   const name = document.getElementById('grocery-f-name').value.trim();
   if (!name) { showToast('Please enter an item name'); return; }
   const id        = document.getElementById('grocery-edit-id').value;
@@ -9547,31 +9725,152 @@ function renderHouseholdColourPicker() {
 }
 
 // ── Household sharing — file proxy ───────────────────────
-// _sharedFileId: set when this device joins another household.
-// When set, syncNow/uploadToDrive use the proxy endpoints instead of
-// calling Drive directly — the backend uses the owner's token.
-let _sharedFileId  = null;  // non-null means this device is a "joined" member
+// ═══════════════════════════════════════════════════════════
+//  SHARE PERMISSION SYSTEM
+//  When a user joins via a share link, _shareState holds their
+//  permission set. This drives tab locking and edit enforcement.
+// ═══════════════════════════════════════════════════════════
+
+// _shareState: null = owner (full access), or { code, name, type, ownerName, households }
+let _shareState    = null;
+let _sharedFileId  = null; // kept for proxy sync routing
 let _inviteCode    = null;
 
-function loadHouseholdShareState() {
-  try {
-    const raw = localStorage.getItem('stockroom_household_share');
-    if (!raw) return;
-    const d = JSON.parse(raw);
-    _sharedFileId = d.fileId || null;
-  } catch(e) {}
-  updateHouseholdShareUI();
+// Default permission sets per user type
+const SHARE_TYPE_DEFAULTS = {
+  family: {
+    stockroom: 'rw', groceries: 'rw', reminders: 'rw', savings: 'rw', report: 'r'
+  },
+  cleaner: {
+    stockroom: 'r', groceries: 'rw', reminders: 'none', savings: 'none', report: 'none'
+  },
+  guest: {
+    stockroom: 'r', groceries: 'r', reminders: 'none', savings: 'none', report: 'r'
+  },
+};
+
+const SECTION_LABELS = {
+  stockroom: '📦 Stockroom', groceries: '🛒 Groceries',
+  reminders: '🔔 Reminders', savings: '💰 Savings', report: '📋 Report',
+};
+
+// Get permission for a section in the current household
+// Returns 'rw', 'r', or 'none'. Returns 'rw' for owners.
+function getSectionPerm(section) {
+  if (!_shareState) return 'rw'; // owner
+  const hKey  = activeProfile || 'default';
+  const hPerms = _shareState.households?.[hKey];
+  if (!hPerms) return 'none'; // no access to this household
+  return hPerms[section] || 'none';
 }
 
-function saveHouseholdShareState() {
-  try {
-    if (_sharedFileId) {
-      localStorage.setItem('stockroom_household_share', JSON.stringify({ fileId: _sharedFileId }));
+function canView(section)  { const p = getSectionPerm(section); return p === 'rw' || p === 'r'; }
+function canWrite(section) { return getSectionPerm(section) === 'rw'; }
+function isOwner()         { return !_shareState; }
+
+// Apply permission state to the tab bar — lock inaccessible sections
+function applyTabPermissions() {
+  if (!_shareState) return; // owner sees everything
+  const sectionToTab = {
+    stockroom: 'stock', groceries: 'grocery', reminders: 'reminders',
+    savings: 'savings', report: 'report',
+  };
+  document.querySelectorAll('.tab').forEach(tab => {
+    const text = tab.textContent.trim().toLowerCase();
+    let section = null;
+    if (text.includes('stockroom')) section = 'stockroom';
+    else if (text.includes('groceries') || text.includes('grocery')) section = 'groceries';
+    else if (text.includes('reminders')) section = 'reminders';
+    else if (text.includes('savings')) section = 'savings';
+    else if (text.includes('report')) section = 'report';
+    if (!section) return;
+    if (canView(section)) {
+      tab.disabled = false;
+      tab.style.opacity = '';
+      tab.title = '';
     } else {
-      localStorage.removeItem('stockroom_household_share');
+      tab.disabled = true;
+      tab.style.opacity = '0.4';
+      tab.title = `🔒 Ask ${_shareState.ownerName || 'the owner'} for access`;
+    }
+  });
+}
+
+// Show lock banner when a user tries to access a restricted section
+function showLockBanner(section) {
+  const label = SECTION_LABELS[section] || section;
+  toast(`🔒 ${label} — ask ${_shareState?.ownerName || 'the owner'} for access`);
+}
+
+// Save/restore share state from localStorage
+function loadShareState() {
+  try {
+    const raw = localStorage.getItem('stockroom_share_state');
+    if (!raw) return;
+    _shareState   = JSON.parse(raw);
+    _sharedFileId = _shareState?._sharedFileId || null;
+  } catch(e) {}
+}
+
+function saveShareState() {
+  try {
+    if (_shareState) {
+      localStorage.setItem('stockroom_share_state', JSON.stringify({ ..._shareState, _sharedFileId }));
+    } else {
+      localStorage.removeItem('stockroom_share_state');
     }
   } catch(e) {}
 }
+
+// Join via share link — called from URL ?join=CODE
+async function joinViaShareCode(code) {
+  try {
+    const res  = await fetch(`${WORKER_URL}/share/join`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Invalid code');
+    _shareState = data;
+    // For proxy sync we need a sharedFileId — use the first accessible household's file
+    // We'll use the proxy endpoints tagged with our share code
+    _sharedFileId = 'SHARE:' + code.toUpperCase();
+    saveShareState();
+    return data;
+  } catch(err) {
+    throw err;
+  }
+}
+
+function leaveShare() {
+  if (!confirm('Leave this shared household?\n\nYou can rejoin with the same link. Your own households are unaffected.')) return;
+  _shareState   = null;
+  _sharedFileId = null;
+  saveShareState();
+  applyTabPermissions();
+  toast('Left shared household');
+  // Switch to own default profile if connected
+  loadProfile('default');
+}
+
+// ── Share state: stored share (old key, migration) ────────
+function loadHouseholdShareState() {
+  // Migrated to loadShareState() — kept for backwards compat
+  loadShareState();
+  if (!_shareState) {
+    // Check old format
+    try {
+      const raw = localStorage.getItem('stockroom_household_share');
+      if (raw) {
+        const d = JSON.parse(raw);
+        if (d.fileId) { _sharedFileId = d.fileId; }
+      }
+    } catch(e) {}
+  }
+  updateHouseholdShareUI();
+}
+
+function saveHouseholdShareState() { saveShareState(); }
 
 function updateHouseholdShareUI() {
   const joinedSection = document.getElementById('household-joined-section');
@@ -9660,14 +9959,7 @@ async function joinHousehold() {
   }
 }
 
-function leaveHousehold() {
-  if (!confirm('Leave the shared household?\n\nYour local data stays intact. You\'ll sync to your own Drive file from now on.')) return;
-  _sharedFileId = null;
-  saveHouseholdShareState();
-  updateHouseholdShareUI();
-  toast('Left household — syncing to your own Drive');
-  syncAll();
-}
+function leaveHousehold() { leaveShare(); }
 
 // ── Proxy read/write used when _sharedFileId is set ──────
 async function proxyReadDrive() {
@@ -9692,9 +9984,227 @@ async function proxyGetModifiedTime() {
   return data.modifiedTime || null;
 }
 
+// ── Share Target Management ───────────────────────────────
+let _shareTargets     = []; // cached from backend
+let _shareTargetType  = 'family';
+let _shareTargetPerms = {}; // { householdKey: { stockroom, groceries, reminders, savings, report } }
+
+async function loadShareTargets() {
+  if (!WORKER_URL || !isOwner()) return;
+  try {
+    const res  = await fetch(`${WORKER_URL}/share/list`);
+    const data = await res.json();
+    _shareTargets = data.targets || [];
+    renderShareTargetsList();
+  } catch(e) { console.warn('Could not load share targets:', e); }
+}
+
+function renderShareTargetsList() {
+  const list = document.getElementById('share-targets-list');
+  const btn  = document.getElementById('add-share-target-btn');
+  if (!list) return;
+  if (!isOwner()) { list.closest('#share-targets-section')?.style && (list.closest('#share-targets-section').style.display = 'none'); return; }
+
+  const typeEmoji = { family: '👨‍👩‍👧', cleaner: '🧹', guest: '👤' };
+  if (!_shareTargets.length) {
+    list.innerHTML = `<p style="font-size:12px;color:var(--muted)">No one has access yet.</p>`;
+  } else {
+    list.innerHTML = _shareTargets.map(t => `
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:10px">
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:700">${typeEmoji[t.type]||'👤'} ${esc(t.name)}</div>
+          <div style="font-size:11px;color:var(--muted);font-family:var(--mono)">${t.type} · code: ${t.code}</div>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="openEditShareTarget('${t.code}')">✏️</button>
+        <button class="btn btn-ghost btn-sm" onclick="copyShareTargetLink('${t.code}')" title="Copy link">🔗</button>
+        <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="deleteShareTarget('${t.code}')">✕</button>
+      </div>`).join('');
+  }
+  if (btn) btn.style.display = _shareTargets.length >= 5 ? 'none' : 'inline-flex';
+}
+
+function selectShareType(type, btn) {
+  _shareTargetType = type;
+  document.querySelectorAll('.share-type-btn').forEach(b => {
+    const isActive = b.dataset.type === type;
+    b.style.borderColor = isActive ? 'var(--accent)' : 'var(--border)';
+    b.style.background  = isActive ? 'rgba(232,168,56,0.1)' : 'transparent';
+    b.style.color       = isActive ? 'var(--accent)' : 'var(--muted)';
+  });
+  // Apply defaults for this type to all households
+  Object.keys(_shareTargetPerms).forEach(hKey => {
+    const defaults = SHARE_TYPE_DEFAULTS[type] || SHARE_TYPE_DEFAULTS.guest;
+    _shareTargetPerms[hKey] = { ...defaults };
+  });
+  renderShareHouseholdPerms();
+}
+
+async function renderShareHouseholdPerms() {
+  const container = document.getElementById('share-household-perms');
+  if (!container) return;
+  const profiles  = await getProfiles();
+  const sections  = ['stockroom','groceries','reminders','savings','report'];
+  const defaults  = SHARE_TYPE_DEFAULTS[_shareTargetType] || SHARE_TYPE_DEFAULTS.guest;
+
+  container.innerHTML = Object.entries(profiles).map(([key, p]) => {
+    const hName  = p.name || (key === 'default' ? 'Home' : key);
+    const colour = p.colour || '#e8a838';
+    const perms  = _shareTargetPerms[key] || { ...defaults };
+    _shareTargetPerms[key] = perms;
+
+    return `<div style="background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:12px">
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px">
+        <div style="width:10px;height:10px;border-radius:50%;background:${colour}"></div>
+        <strong style="font-size:13px">${esc(hName)}</strong>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        ${sections.map(s => {
+          const val = perms[s] || 'none';
+          return `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px">
+            <span style="font-size:12px;color:var(--muted)">${SECTION_LABELS[s]||s}</span>
+            <div style="display:flex;gap:4px">
+              ${['none','r','rw'].map(opt => `
+                <button onclick="setSharePerm('${key}','${s}','${opt}')"
+                  id="spm-${key}-${s}-${opt}"
+                  style="padding:3px 8px;border-radius:6px;font-size:11px;cursor:pointer;
+                         border:1px solid ${val===opt?'var(--accent)':'var(--border)'};
+                         background:${val===opt?'rgba(232,168,56,0.15)':'transparent'};
+                         color:${val===opt?'var(--accent)':'var(--muted)'};transition:all 0.15s">
+                  ${opt==='none'?'🔒 None':opt==='r'?'👁 View':'✏️ Edit'}
+                </button>`).join('')}
+            </div>
+          </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function setSharePerm(hKey, section, value) {
+  if (!_shareTargetPerms[hKey]) _shareTargetPerms[hKey] = {};
+  _shareTargetPerms[hKey][section] = value;
+  // Update button states
+  ['none','r','rw'].forEach(opt => {
+    const btn = document.getElementById(`spm-${hKey}-${section}-${opt}`);
+    if (!btn) return;
+    const active = opt === value;
+    btn.style.borderColor = active ? 'var(--accent)' : 'var(--border)';
+    btn.style.background  = active ? 'rgba(232,168,56,0.15)' : 'transparent';
+    btn.style.color       = active ? 'var(--accent)' : 'var(--muted)';
+  });
+}
+
+async function openAddShareTarget() {
+  if (_shareTargets.length >= 5) { toast('Maximum 5 share targets reached'); return; }
+  _shareTargetType  = 'family';
+  _shareTargetPerms = {};
+  const profiles    = await getProfiles();
+  const defaults    = SHARE_TYPE_DEFAULTS.family;
+  Object.keys(profiles).forEach(k => { _shareTargetPerms[k] = { ...defaults }; });
+
+  document.getElementById('share-target-modal-title').textContent = '👤 Add Person';
+  document.getElementById('share-target-code').value = '';
+  document.getElementById('share-target-name').value = '';
+  document.getElementById('share-link-section').style.display = 'none';
+  document.getElementById('share-target-save-btn').textContent = 'Create & get link';
+  selectShareType('family', document.querySelector('.share-type-btn[data-type="family"]'));
+  await renderShareHouseholdPerms();
+  openModal('share-target-modal');
+}
+
+async function openEditShareTarget(code) {
+  const target = _shareTargets.find(t => t.code === code);
+  if (!target) return;
+  _shareTargetType  = target.type || 'family';
+  _shareTargetPerms = JSON.parse(JSON.stringify(target.households || {}));
+
+  document.getElementById('share-target-modal-title').textContent = '✏️ Edit Person';
+  document.getElementById('share-target-code').value = code;
+  document.getElementById('share-target-name').value = target.name || '';
+  document.getElementById('share-link-section').style.display = 'none';
+  document.getElementById('share-target-save-btn').textContent = 'Save changes';
+  selectShareType(_shareTargetType, document.querySelector(`.share-type-btn[data-type="${_shareTargetType}"]`));
+  await renderShareHouseholdPerms();
+  openModal('share-target-modal');
+}
+
+async function saveShareTarget() {
+  const name = document.getElementById('share-target-name').value.trim();
+  if (!name) { toast('Enter a name for this person'); return; }
+  const code     = document.getElementById('share-target-code').value;
+  const ownerName = (await getProfiles())['default']?.name || 'Home';
+  const btn = document.getElementById('share-target-save-btn');
+  if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
+
+  try {
+    if (code) {
+      // Update existing
+      await fetch(`${WORKER_URL}/share/update`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code, name, type: _shareTargetType, households: _shareTargetPerms }),
+      });
+      toast(`Updated ${name} ✓`);
+    } else {
+      // Create new
+      const res  = await fetch(`${WORKER_URL}/share/create`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, type: _shareTargetType, ownerName, households: _shareTargetPerms }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed');
+      const link = data.link || `https://art-bot5000.github.io/stockroom/?join=${data.code}`;
+      document.getElementById('share-link-value').textContent = link;
+      document.getElementById('share-link-section').style.display = 'block';
+      document.getElementById('share-target-save-btn').textContent = 'Done';
+      document.getElementById('share-target-save-btn').onclick = () => closeModal('share-target-modal');
+    }
+    await loadShareTargets();
+  } catch(err) {
+    toast('Could not save: ' + err.message);
+    if (btn) { btn.textContent = code ? 'Save changes' : 'Create & get link'; btn.disabled = false; }
+  }
+}
+
+function copyShareLink() {
+  const link = document.getElementById('share-link-value')?.textContent?.trim();
+  if (!link) return;
+  navigator.clipboard?.writeText(link).then(() => toast('Link copied ✓')).catch(() => prompt('Copy this link:', link));
+}
+
+function copyShareTargetLink(code) {
+  const link = `https://art-bot5000.github.io/stockroom/?join=${code}`;
+  navigator.clipboard?.writeText(link).then(() => toast('Link copied ✓')).catch(() => prompt('Copy this link:', link));
+}
+
+async function deleteShareTarget(code) {
+  const target = _shareTargets.find(t => t.code === code);
+  if (!confirm(`Remove ${target?.name || 'this person'}'s access?\n\nTheir link will stop working immediately.`)) return;
+  try {
+    await fetch(`${WORKER_URL}/share/delete`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code }),
+    });
+    await loadShareTargets();
+    toast('Access removed ✓');
+  } catch(err) { toast('Could not remove: ' + err.message); }
+}
+
+function updateHouseholdShareUI() {
+  const joinedSection = document.getElementById('household-joined-section');
+  if (!joinedSection) return;
+  if (_shareState) {
+    joinedSection.style.display = 'block';
+    const statusEl = document.getElementById('joined-status-text');
+    if (statusEl) statusEl.textContent = `✓ Joined ${_shareState.ownerName || 'a household'}'s STOCKROOM as ${_shareState.type || 'guest'}`;
+  } else {
+    joinedSection.style.display = 'none';
+  }
+}
+
 function initHouseholdSettingsUI() {
   loadHouseholdSettings();
-  loadHouseholdShareState();
+  loadShareState(); // replaces loadHouseholdShareState
+  updateHouseholdShareUI();
   const toggle = document.getElementById('household-mode-toggle');
   const nameEl = document.getElementById('household-display-name');
   if (toggle) toggle.checked = _householdEnabled;
@@ -9702,6 +10212,9 @@ function initHouseholdSettingsUI() {
   document.getElementById('household-settings-body').style.display = _householdEnabled ? 'block' : 'none';
   renderHouseholdColourPicker();
   if (_householdEnabled) connectPresence();
+  applyTabPermissions();
+  // Load share targets if owner
+  if (isOwner() && WORKER_URL) loadShareTargets();
 }
 
 // ── User ID ───────────────────────────────────────────────
@@ -9867,6 +10380,8 @@ async function init() {
   } catch(e){}
 
   handleOAuthRedirect();
+  // Load share state before handleURLAction so ?join=CODE can override it
+  loadShareState();
   handleURLAction();
 
   buildCountryGrid();
