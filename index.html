@@ -2576,7 +2576,9 @@ async function checkKVStatus() {
   try {
     const res  = await fetch(`${WORKER_URL}/debug-schedule`);
     const data = await res.json();
-    const ok   = s => s && s.startsWith('✓');
+    const allOk = data.email?.startsWith('✓') &&
+                  data.schedule && data.schedule !== '✗ missing' &&
+                  data.driveRefresh?.startsWith('✓');
     const lines = [
       `email: ${data.email}`,
       `schedule: ${typeof data.schedule === 'object' && data.schedule ? '✓ set' : data.schedule}`,
@@ -2584,12 +2586,20 @@ async function checkKVStatus() {
       `lastSent: ${data.lastSent}`,
       data.nextSend ? `nextSend: ${data.nextSend}` : '',
     ].filter(Boolean);
-    const allOk = ok(data.email) && data.schedule && data.schedule !== '✗ missing' && ok(data.driveRefresh);
     if (status) {
-      status.style.color = allOk ? 'var(--ok)' : 'var(--danger)';
-      status.textContent = (allOk ? '✓ ' : '✗ ') + lines.join(' · ');
+      status.style.color = allOk ? 'var(--ok)' : 'var(--warn)';
+      status.innerHTML = lines.map(l => {
+        const isOk  = l.includes('✓');
+        const isBad = l.includes('✗');
+        const color = isOk ? 'var(--ok)' : isBad ? 'var(--danger)' : 'var(--muted)';
+        return `<span style="color:${color}">${l}</span>`;
+      }).join(' · ');
     }
-    if (!allOk) toast('⚠️ Server KV is missing data — tap Re-push to fix');
+    if (!data.driveRefresh?.startsWith('✓')) {
+      toast('⚠️ Drive refresh token missing — reconnect Google Drive in Settings');
+    } else if (!allOk) {
+      toast('⚠️ Some server settings missing — tap Re-push');
+    }
   } catch(err) {
     if (status) { status.style.color = 'var(--danger)'; status.textContent = '✗ Could not reach server'; }
   } finally {
@@ -2602,14 +2612,24 @@ async function repushToServer() {
   const status = document.getElementById('kv-status-text');
   if (!WORKER_URL) { toast('No backend URL configured'); return; }
   if (!settings.email) { toast('Set your email address first'); return; }
+
+  // Check if driveRefresh is missing first — repush can't fix that
+  try {
+    const check = await fetch(`${WORKER_URL}/debug-schedule`);
+    const data  = await check.json();
+    if (!data.driveRefresh?.startsWith('✓')) {
+      toast('⚠️ Drive refresh token missing — reconnect Google Drive first, then Re-push');
+      if (status) { status.style.color = 'var(--danger)'; status.textContent = '✗ Reconnect Google Drive first (Settings → Cloud Sync)'; }
+      return;
+    }
+  } catch(e) {}
+
   if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
   try {
     await pushScheduleToWorker();
-    // Also push current items snapshot
     await pushItemsToWorker();
     if (status) { status.style.color = 'var(--ok)'; status.textContent = '✓ Re-pushed — tap Check to verify'; }
     toast('Settings re-pushed to server ✓');
-    // Auto-check after 1s
     setTimeout(checkKVStatus, 1000);
   } catch(err) {
     toast('Re-push failed: ' + err.message);
@@ -8324,6 +8344,7 @@ async function handleOAuthRedirect() {
             driveConnected = true;
             try { sessionStorage.setItem('stockroom_access_token', data.access_token); } catch(e){}
             try { localStorage.setItem('stockroom_drive', JSON.stringify({ driveFileId, driveConnected })); } catch(e){}
+            startProactiveTokenRefresh();
             updateSyncUI();
             const wizardStep = localStorage.getItem('stockroom_wizard_step');
             if (wizardStep === '2') { localStorage.removeItem('stockroom_wizard_step'); wizardNext(); }
@@ -8572,7 +8593,33 @@ async function syncNow() {
   }
 }
 
-let _reAuthInProgress = false;
+let _reAuthInProgress    = false;
+let _proactiveRefreshTimer = null;
+
+// Proactively refresh the access token every 50 minutes — well before the 1-hour expiry.
+// This means the token is always fresh and syncs never hit a 401.
+function startProactiveTokenRefresh() {
+  stopProactiveTokenRefresh();
+  _proactiveRefreshTimer = setInterval(async () => {
+    if (!driveConnected || !WORKER_URL) return;
+    try {
+      const res  = await fetch(`${WORKER_URL}/auth/refresh?provider=google`);
+      const data = await res.json();
+      if (res.ok && data.access_token) {
+        accessToken = data.access_token;
+        try { sessionStorage.setItem('stockroom_access_token', data.access_token); } catch(e){}
+        console.log('Drive: proactive token refresh succeeded');
+        hideReAuthBanner(); // clear any stale banner
+      }
+    } catch(e) {
+      console.warn('Drive: proactive refresh failed:', e.message);
+    }
+  }, 50 * 60 * 1000); // every 50 minutes
+}
+
+function stopProactiveTokenRefresh() {
+  if (_proactiveRefreshTimer) { clearInterval(_proactiveRefreshTimer); _proactiveRefreshTimer = null; }
+}
 
 async function silentReAuth() {
   if (!driveConnected || _reAuthInProgress) return;
@@ -8580,7 +8627,6 @@ async function silentReAuth() {
   updateSyncPill('syncing');
 
   try {
-    // Step 1: try to get a fresh token from the backend using the stored refresh token
     const res  = await fetch(`${WORKER_URL}/auth/refresh?provider=google`);
     const data = await res.json();
     if (res.ok && data.access_token) {
@@ -8588,7 +8634,7 @@ async function silentReAuth() {
       try { sessionStorage.setItem('stockroom_access_token', data.access_token); } catch(e){}
       _reAuthInProgress = false;
       console.log('Drive: silent token refresh succeeded');
-      // Retry the sync now that we have a fresh token
+      hideReAuthBanner();
       await syncNow();
       return;
     }
@@ -8596,25 +8642,46 @@ async function silentReAuth() {
     console.warn('Drive: silent refresh failed:', e.message);
   }
 
-  // Step 2: refresh failed (no stored refresh token, or Google revoked it) — show re-auth banner
+  // Silent refresh failed — show banner but keep retrying automatically every 30s
+  // so it self-heals if the network was temporarily down
   _reAuthInProgress = false;
   accessToken = null;
   updateSyncPill('error');
   showReAuthBanner();
 }
 
+let _bannerRetryTimer = null;
+
 function showReAuthBanner() {
   const b = document.getElementById('reauth-banner');
   if (b) b.style.display = 'flex';
+  // Auto-retry silent refresh every 30s — self-heals if it was a transient network failure
+  if (!_bannerRetryTimer) {
+    _bannerRetryTimer = setInterval(async () => {
+      if (!driveConnected) { clearInterval(_bannerRetryTimer); _bannerRetryTimer = null; return; }
+      try {
+        const res  = await fetch(`${WORKER_URL}/auth/refresh?provider=google`);
+        const data = await res.json();
+        if (res.ok && data.access_token) {
+          accessToken = data.access_token;
+          try { sessionStorage.setItem('stockroom_access_token', data.access_token); } catch(e){}
+          hideReAuthBanner();
+          toast('Drive reconnected ✓');
+          clearInterval(_bannerRetryTimer); _bannerRetryTimer = null;
+          await syncNow();
+        }
+      } catch(e) { /* still offline — keep retrying */ }
+    }, 30000);
+  }
 }
 
 function hideReAuthBanner() {
   const b = document.getElementById('reauth-banner');
   if (b) b.style.display = 'none';
+  if (_bannerRetryTimer) { clearInterval(_bannerRetryTimer); _bannerRetryTimer = null; }
 }
 
 function triggerReAuth() {
-  // Store current view so we come back here after auth
   try {
     const currentTab = [...document.querySelectorAll('.tab')].find(t => t.classList.contains('active'));
     const viewName   = currentTab?.textContent?.trim() || '';
@@ -8844,6 +8911,8 @@ async function signOutDrive() {
   accessToken    = null;
   driveConnected = false;
   driveFileId    = null;
+  stopProactiveTokenRefresh();
+  hideReAuthBanner();
   try { localStorage.removeItem('stockroom_drive'); } catch(e) {}
   updateSyncUI();
   toast('Signed out of Google Drive');
@@ -9818,6 +9887,7 @@ async function init() {
       driveConnected = true;
       driveFileId    = d.driveFileId || null;
       accessToken = sessionStorage.getItem('stockroom_access_token') || null;
+      startProactiveTokenRefresh(); // keep token fresh proactively
     }
   } catch(e){}
 
