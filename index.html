@@ -8406,6 +8406,10 @@ async function handleOAuthRedirect() {
 
 async function drivePull() {
   const res = await fetch(`${WORKER_URL}/sync/pull`);
+  if (res.status === 503) {
+    // Backend has no refresh token — need to connect Drive
+    throw new Error('NOT_CONNECTED');
+  }
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `Pull failed: ${res.status}`);
@@ -8419,6 +8423,7 @@ async function drivePush(payload) {
     headers: { 'Content-Type': 'application/json' },
     body:    payload,
   });
+  if (res.status === 503) throw new Error('NOT_CONNECTED');
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `Push failed: ${res.status}`);
@@ -8485,10 +8490,21 @@ async function syncNow() {
     updateSyncPill('synced');
   } catch(err) {
     console.error('Drive sync error:', err);
-    updateSyncPill('error');
-    // Only show error toast for non-transient failures
-    if (!err.message.includes('503') && !err.message.includes('fetch')) {
-      toast('Sync failed — will retry automatically');
+    if (err.message === 'NOT_CONNECTED') {
+      // Backend has no refresh token — prompt user to connect Drive
+      updateSyncPill('error');
+      const label = document.getElementById('sync-label');
+      if (label) label.textContent = 'Connect Drive';
+      // Only show the prompt once per session
+      if (!sessionStorage.getItem('connect_drive_prompted')) {
+        sessionStorage.setItem('connect_drive_prompted', '1');
+        toast('Connect Google Drive in Settings to enable sync');
+      }
+    } else {
+      updateSyncPill('error');
+      if (!err.message.includes('fetch') && !err.message.includes('NetworkError')) {
+        toast('Sync failed — will retry automatically');
+      }
     }
   }
 }
