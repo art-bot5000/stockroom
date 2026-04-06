@@ -973,7 +973,7 @@
 
   <!-- REPORT VIEW -->
   <div class="view" id="view-report">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:24px;flex-wrap:wrap;gap:10px">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px;flex-wrap:wrap;gap:10px">
       <div>
         <h2 style="font-size:18px;font-weight:700">Stock Report</h2>
         <div id="report-date" style="font-size:12px;color:var(--muted);font-family:var(--mono);margin-top:3px"></div>
@@ -984,6 +984,7 @@
         <button class="btn btn-ghost btn-sm" onclick="exportReport()">⬇ Export</button>
       </div>
     </div>
+    <div id="report-household-tabs" style="display:none;margin-bottom:16px"></div>
     <div id="spend-section" style="display:none;margin-bottom:28px">
       <h3 style="font-size:15px;font-weight:700;margin-bottom:16px">💷 Monthly Spend</h3>
       <div id="spend-chart" style="margin-bottom:12px"></div>
@@ -1629,17 +1630,41 @@
 
 <!-- ═══ PROFILE PICKER MODAL ═══ -->
 <div class="modal-backdrop" id="profile-modal">
-  <div class="modal" style="max-width:420px">
-    <h2>🏠 Household Profiles</h2>
-    <p class="subtitle">Switch between different stockrooms — home, holiday cottage, office, etc.</p>
+  <div class="modal" style="max-width:440px">
+    <h2>🏠 Households</h2>
+    <p class="subtitle">Each household has its own stockroom, groceries, reminders and settings.</p>
     <div id="profile-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px"></div>
-    <div style="display:flex;gap:8px;margin-bottom:4px">
-      <input type="text" id="new-profile-name" placeholder="New profile name…"
-        style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-family:var(--sans);font-size:13px;outline:none">
-      <button class="btn btn-primary btn-sm" onclick="addProfile()">Add</button>
+    <div id="profile-add-section">
+      <div style="display:flex;gap:8px;margin-bottom:4px">
+        <input type="text" id="new-profile-name" placeholder="New household name…"
+          style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:9px 12px;color:var(--text);font-family:var(--sans);font-size:13px;outline:none"
+          maxlength="24">
+        <button class="btn btn-primary btn-sm" onclick="addProfile()">+ Add</button>
+      </div>
+      <p style="font-size:11px;color:var(--muted);margin-top:4px">Up to 5 households. Each gets its own data and settings.</p>
     </div>
     <div class="modal-footer" style="margin-top:16px">
       <button class="btn btn-ghost" onclick="closeModal('profile-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Household edit modal -->
+<div class="modal-backdrop" id="household-edit-modal">
+  <div class="modal" style="max-width:380px">
+    <h2>✏️ Edit Household</h2>
+    <input type="hidden" id="household-edit-key">
+    <div class="form-group" style="margin-bottom:12px">
+      <label class="form-label">Name</label>
+      <input class="form-input" id="household-edit-name" type="text" maxlength="24" placeholder="e.g. Mum's House">
+    </div>
+    <div class="form-group" style="margin-bottom:16px">
+      <label class="form-label">Colour</label>
+      <div id="household-edit-colours" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"></div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-ghost" onclick="closeModal('household-edit-modal')">Cancel</button>
+      <button class="btn btn-primary" onclick="saveHouseholdEdit()">Save</button>
     </div>
   </div>
 </div>
@@ -2644,6 +2669,7 @@ async function pushScheduleToWorker() {
         startDate:    settings.emailStartDate,
         startTime:    settings.emailStartTime || '09:00',
         intervalDays: settings.emailInterval ?? 30,
+        household:    activeProfile === 'default' ? null : activeProfile,
         urgent,
         upcoming,
       }),
@@ -2653,7 +2679,6 @@ async function pushScheduleToWorker() {
   }
 }
 
-// Push fresh item data to Worker whenever items change
 async function pushItemsToWorker() {
   if (!WORKER_URL || !settings.email) return;
   try {
@@ -2668,6 +2693,7 @@ async function pushItemsToWorker() {
         startDate:    settings.emailStartDate,
         startTime:    settings.emailStartTime || '09:00',
         intervalDays: settings.emailInterval ?? 30,
+        household:    activeProfile === 'default' ? null : activeProfile,
         urgent,
         upcoming,
       }),
@@ -4025,6 +4051,7 @@ async function loadReminders() {
 
 async function saveReminders() {
   await dbPut('reminders', 'reminders', reminders);
+  if (activeProfile) await saveCurrentProfile();
 }
 
 // ── Calculations ──────────────────────────
@@ -4755,10 +4782,15 @@ async function loadProfile(key) {
   const profile   = profiles[activeProfile];
   if (profile) {
     const deletedIds = await loadDeletedIds();
-    items    = (profile.items || []).filter(i => !deletedIds.has(i.id));
-    settings = { threshold: 20, country: 'GB', ...profile.settings };
+    items        = (profile.items || []).filter(i => !deletedIds.has(i.id));
+    settings     = { threshold: 20, country: 'GB', ...profile.settings };
+    reminders    = profile.reminders   || [];
+    groceryItems = profile.groceries   || [];
+    groceryDepts = profile.departments?.length ? profile.departments : DEFAULT_DEPTS.map(d => ({...d}));
   } else {
     await loadData();
+    await loadReminders();
+    await loadGrocery();
     await saveCurrentProfile();
   }
   updateProfileLabel();
@@ -4769,18 +4801,25 @@ async function loadProfile(key) {
 async function saveCurrentProfile() {
   const deletedIds = await loadDeletedIds();
   const profiles = await getProfiles();
+  const existing = profiles[activeProfile] || {};
   profiles[activeProfile] = {
-    items: JSON.parse(JSON.stringify(items.filter(i => !deletedIds.has(i.id)))),
+    ...existing,
+    items:       JSON.parse(JSON.stringify(items.filter(i => !deletedIds.has(i.id)))),
     settings,
+    reminders:   JSON.parse(JSON.stringify(reminders)),
+    groceries:   JSON.parse(JSON.stringify(groceryItems)),
+    departments: JSON.parse(JSON.stringify(groceryDepts)),
   };
   await saveProfiles(profiles);
 }
 
 async function updateProfileLabel() {
-  const profiles = getProfiles();
-  const name     = profiles[activeProfile]?.name || (activeProfile === 'default' ? 'Home' : activeProfile);
+  const profiles = await getProfiles();
+  const profile  = profiles[activeProfile];
+  const name     = profile?.name || (activeProfile === 'default' ? 'Home' : activeProfile);
+  const colour   = profile?.colour || '#e8a838';
   const label    = document.getElementById('profile-label');
-  if (label) label.textContent = `/ ${name.toUpperCase()}`;
+  if (label) label.innerHTML = `/ <span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:${colour};margin-right:4px;vertical-align:middle"></span>${name.toUpperCase()}`;
 }
 
 function openProfilePicker() {
@@ -4788,56 +4827,132 @@ function openProfilePicker() {
   openModal('profile-modal');
 }
 
+const HOUSEHOLD_COLOURS = [
+  '#e8a838','#5b8dee','#4cbb8a','#e85050','#b45dee',
+  '#ee8c5b','#5bdee8','#dee85b','#ee5bab','#7880a0',
+];
+const MAX_HOUSEHOLDS = 5;
+
 async function renderProfileList() {
-  const profiles = getProfiles();
+  const profiles = await getProfiles();
   const list     = document.getElementById('profile-list');
+  const addSec   = document.getElementById('profile-add-section');
   if (!list) return;
 
-  // Ensure default profile exists
-  if (!profiles['default']) profiles['default'] = { name: 'Home', items: [], settings: {} };
+  if (!profiles['default']) profiles['default'] = { name: 'Home', colour: '#e8a838', items: [], settings: {} };
 
-  list.innerHTML = Object.entries(profiles).map(([key, p]) => {
+  const entries = Object.entries(profiles);
+  if (addSec) addSec.style.display = entries.length >= MAX_HOUSEHOLDS ? 'none' : 'block';
+
+  list.innerHTML = entries.map(([key, p]) => {
     const isActive = key === activeProfile;
+    const colour   = p.colour || '#e8a838';
     const count    = (p.items || []).length;
-    return `<div style="display:flex;align-items:center;gap:10px;padding:10px 14px;background:${isActive ? 'rgba(232,168,56,0.1)' : 'var(--surface2)'};border:1px solid ${isActive ? 'rgba(232,168,56,0.4)' : 'var(--border)'};border-radius:10px">
-      <div style="flex:1">
-        <div style="font-size:14px;font-weight:600;color:${isActive ? 'var(--accent)' : 'var(--text)'}">${esc(p.name || key)}${isActive ? ' ✓' : ''}</div>
-        <div style="font-size:11px;color:var(--muted);font-family:var(--mono)">${count} item${count !== 1 ? 's' : ''}</div>
+    const reminderCount = (p.reminders || []).length;
+    const syncFile = p.driveFileName ? `<span style="font-size:10px;color:var(--muted);font-family:var(--mono)">${esc(p.driveFileName)}</span>` : '';
+    return `<div style="display:flex;align-items:center;gap:10px;padding:12px 14px;background:${isActive ? 'rgba(232,168,56,0.08)' : 'var(--surface2)'};border:2px solid ${isActive ? colour : 'var(--border)'};border-radius:12px;transition:border-color 0.2s">
+      <div style="width:14px;height:14px;border-radius:50%;background:${colour};flex-shrink:0;box-shadow:0 1px 4px rgba(0,0,0,0.3)"></div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:14px;font-weight:700;color:${isActive ? colour : 'var(--text)'}">${esc(p.name || key)}${isActive ? ' ✓' : ''}</div>
+        <div style="font-size:11px;color:var(--muted);font-family:var(--mono)">${count} item${count!==1?'s':''} · ${reminderCount} reminder${reminderCount!==1?'s':''}</div>
+        ${syncFile}
       </div>
-      ${!isActive ? `<button class="btn btn-ghost btn-sm" onclick="switchProfile('${key}')">Switch</button>` : '<span style="font-size:11px;color:var(--accent)">Active</span>'}
-      ${key !== 'default' ? `<button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="deleteProfile('${key}')">✕</button>` : ''}
+      <div style="display:flex;gap:6px;flex-shrink:0">
+        ${!isActive ? `<button class="btn btn-primary btn-sm" onclick="switchProfile('${key}')">Switch</button>` : '<span style="font-size:11px;color:var(--accent);font-weight:700">Active</span>'}
+        <button class="btn btn-ghost btn-sm" onclick="openHouseholdEdit('${key}')" title="Edit">✏️</button>
+        ${key !== 'default' ? `<button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="deleteProfile('${key}')" title="Delete">✕</button>` : ''}
+      </div>
     </div>`;
   }).join('');
 }
 
+function openHouseholdEdit(key) {
+  getProfiles().then(profiles => {
+    const p = profiles[key] || {};
+    document.getElementById('household-edit-key').value  = key;
+    document.getElementById('household-edit-name').value = p.name || '';
+    const currentColour = p.colour || '#e8a838';
+    const colourPicker  = document.getElementById('household-edit-colours');
+    if (colourPicker) {
+      colourPicker.innerHTML = HOUSEHOLD_COLOURS.map(c => `
+        <div onclick="selectHouseholdColour('${c}')"
+          data-colour="${c}"
+          style="width:28px;height:28px;border-radius:50%;background:${c};cursor:pointer;
+                 border:3px solid ${c === currentColour ? 'var(--text)' : 'transparent'};
+                 transition:border-color 0.15s;box-shadow:0 2px 6px rgba(0,0,0,0.3)"></div>
+      `).join('');
+    }
+    openModal('household-edit-modal');
+  });
+}
+
+function selectHouseholdColour(colour) {
+  document.querySelectorAll('#household-edit-colours [data-colour]').forEach(el => {
+    el.style.borderColor = el.dataset.colour === colour ? 'var(--text)' : 'transparent';
+  });
+}
+
+async function saveHouseholdEdit() {
+  const key    = document.getElementById('household-edit-key').value;
+  const name   = document.getElementById('household-edit-name').value.trim();
+  if (!name) { toast('Enter a name'); return; }
+  const selected = document.querySelector('#household-edit-colours [style*="var(--text)"]');
+  const colour   = selected?.dataset.colour || '#e8a838';
+  const profiles = await getProfiles();
+  if (profiles[key]) {
+    profiles[key].name   = name;
+    profiles[key].colour = colour;
+    await saveProfiles(profiles);
+  }
+  closeModal('household-edit-modal');
+  renderProfileList();
+  if (key === activeProfile) updateProfileLabel();
+  toast('Household updated ✓');
+}
+
 async function switchProfile(key) {
-  // Save current before switching
   await saveCurrentProfile();
   closeModal('profile-modal');
   await loadProfile(key);
-  toast(`Switched to ${getProfiles()[key]?.name || key}`);
+  const profiles = await getProfiles();
+  toast(`Switched to ${profiles[key]?.name || key}`);
 }
 
 async function addProfile() {
-  const nameEl = document.getElementById('new-profile-name');
-  const name   = nameEl?.value.trim();
-  if (!name) { toast('Enter a profile name'); return; }
-  const key    = 'profile_' + Date.now();
-  const profiles = getProfiles();
-  profiles[key]  = { name, items: [], settings: { threshold: 20, country: 'GB' } };
+  const profiles = await getProfiles();
+  if (Object.keys(profiles).length >= MAX_HOUSEHOLDS) {
+    toast(`Maximum ${MAX_HOUSEHOLDS} households reached`);
+    return;
+  }
+  const nameEl  = document.getElementById('new-profile-name');
+  const count   = Object.keys(profiles).length + 1;
+  const name    = nameEl?.value.trim() || `Home ${count}`;
+  const colour  = HOUSEHOLD_COLOURS[count % HOUSEHOLD_COLOURS.length];
+  const key     = 'profile_' + Date.now();
+  profiles[key] = {
+    name,
+    colour,
+    items:       [],
+    settings:    { threshold: 20, country: settings.country || 'GB' },
+    reminders:   [],
+    groceries:   [],
+    departments: DEFAULT_DEPTS.map(d => ({...d})),
+  };
   await saveProfiles(profiles);
   if (nameEl) nameEl.value = '';
   renderProfileList();
-  toast(`Profile "${name}" created`);
+  toast(`"${name}" created — switch to it to set it up`);
 }
 
 async function deleteProfile(key) {
-  if (!confirm('Delete this profile and all its items?')) return;
-  const profiles = getProfiles();
+  const profiles = await getProfiles();
+  const name = profiles[key]?.name || key;
+  if (!confirm(`Delete "${name}" and all its items, groceries and reminders?\n\nThis cannot be undone.`)) return;
   delete profiles[key];
   await saveProfiles(profiles);
+  if (activeProfile === key) await loadProfile('default');
   renderProfileList();
-  toast('Profile deleted');
+  toast(`"${name}" deleted`);
 }
 
 // ═══════════════════════════════════════════
@@ -5363,7 +5478,7 @@ function sendLocalNotification(title, body, tag) {
   }
 }
 
-function checkLowStockNotifications() {
+async function checkLowStockNotifications() {
   if (!notifEnabled || Notification.permission !== 'granted') return;
   const days = parseInt(document.getElementById('notif-days')?.value || '14');
   const due  = items
@@ -5375,10 +5490,15 @@ function checkLowStockNotifications() {
   const today = new Date().toISOString().slice(0, 10);
   if (localStorage.getItem('stockroom_last_notif') === today) return;
 
+  // Include household name so user knows which household triggered the alert
+  const profiles = await getProfiles();
+  const householdName = profiles[activeProfile]?.name || 'Home';
+  const hLabel = Object.keys(profiles).length > 1 ? ` · ${householdName}` : '';
+
   const critical = due.filter(d => d.daysLeft <= 7);
-  const title = critical.length
+  const title = (critical.length
     ? `🔴 ${critical.length} item${critical.length !== 1 ? 's' : ''} critically low!`
-    : `📦 ${due.length} item${due.length !== 1 ? 's' : ''} running low`;
+    : `📦 ${due.length} item${due.length !== 1 ? 's' : ''} running low`) + hLabel;
   const body = due.slice(0, 3).map(d => `• ${d.item.name} (${d.daysLeft}d left)`).join('\n')
     + (due.length > 3 ? `\n+ ${due.length - 3} more` : '');
 
@@ -6561,13 +6681,57 @@ function autoFillStore() {
 }
 
 
+window._reportHousehold = '__all__';
+
+async function setReportHousehold(key) {
+  window._reportHousehold = key;
+  if (key !== '__all__' && key !== activeProfile) {
+    // Load that household's items temporarily for the report view
+    const profiles = await getProfiles();
+    const profile  = profiles[key];
+    if (profile) {
+      // Temporarily override items for report rendering
+      const savedItems = items;
+      items = profile.items || [];
+      renderReport();
+      items = savedItems;
+      return;
+    }
+  }
+  renderReport();
+}
+
 function renderReport() {
   const threshold = settings.threshold;
   document.getElementById('report-date').textContent = 'Generated: ' + new Date().toLocaleDateString('en-GB',{weekday:'long',year:'numeric',month:'long',day:'numeric'});
   renderPendingDeliveries();
 
+  // Render household tabs if multiple households exist
+  getProfiles().then(profiles => {
+    const keys = Object.keys(profiles);
+    const tabsEl = document.getElementById('report-household-tabs');
+    if (!tabsEl) return;
+    if (keys.length <= 1) { tabsEl.style.display = 'none'; return; }
+    tabsEl.style.display = 'flex';
+    tabsEl.style.cssText = 'display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px';
+    tabsEl.innerHTML = [{ key: '__all__', name: 'All Households', colour: '#7880a0' },
+      ...keys.map(k => ({ key: k, name: profiles[k]?.name || k, colour: profiles[k]?.colour || '#e8a838' }))
+    ].map(({ key, name, colour }) => {
+      const active = (window._reportHousehold || '__all__') === key;
+      return `<button onclick="setReportHousehold('${key}')"
+        style="padding:6px 14px;border-radius:99px;border:2px solid ${active ? colour : 'var(--border)'};
+               background:${active ? colour + '22' : 'transparent'};color:${active ? colour : 'var(--muted)'};
+               font-size:12px;font-weight:${active ? '700' : '400'};cursor:pointer;transition:all 0.2s">
+        ${esc(name)}
+      </button>`;
+    }).join('');
+  });
+
+  // Determine which items to report on
+  const reportItems = items; // current household items (or will be combined below)
+
   const groups = { critical:[], warn:[], ok:[], nodata:[] };
-  items.forEach(item => {
+  reportItems.forEach(item => {
     const s = calcStock(item);
     const status = getStatus(s?.pct??null, threshold);
     groups[status].push({item, pct:s?.pct??null, daysLeft:s?.daysLeft??null});
@@ -8405,11 +8569,9 @@ async function handleOAuthRedirect() {
 // No access token, no sessionStorage token, no re-auth needed.
 
 async function drivePull() {
-  const res = await fetch(`${WORKER_URL}/sync/pull`);
-  if (res.status === 503) {
-    // Backend has no refresh token — need to connect Drive
-    throw new Error('NOT_CONNECTED');
-  }
+  const hParam = activeProfile && activeProfile !== 'default' ? `?household=${encodeURIComponent(activeProfile)}` : '';
+  const res = await fetch(`${WORKER_URL}/sync/pull${hParam}`);
+  if (res.status === 503) throw new Error('NOT_CONNECTED');
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
     throw new Error(err.error || `Pull failed: ${res.status}`);
@@ -8418,7 +8580,8 @@ async function drivePull() {
 }
 
 async function drivePush(payload) {
-  const res = await fetch(`${WORKER_URL}/sync/push`, {
+  const hParam = activeProfile && activeProfile !== 'default' ? `?household=${encodeURIComponent(activeProfile)}` : '';
+  const res = await fetch(`${WORKER_URL}/sync/push${hParam}`, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
     body:    payload,
@@ -8914,12 +9077,14 @@ async function loadGrocery() {
 
 async function saveGrocery() {
   await dbPut('groceries', 'items', groceryItems);
+  if (activeProfile) await saveCurrentProfile();
   if (driveConnected || dropboxConnected) setTimeout(syncAll, 600);
   bcPost({ type: 'GROCERY_CHANGED' });
 }
 
 async function saveGroceryDepts() {
   await dbPut('departments', 'departments', groceryDepts);
+  if (activeProfile) await saveCurrentProfile();
 }
 
 function getGroceryShopInterval() {
