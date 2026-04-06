@@ -5049,8 +5049,10 @@ async function saveHouseholdEdit() {
   }
   closeModal('household-edit-modal');
   renderProfileList();
+  renderSettingsHouseholdList();
   if (key === activeProfile) updateProfileLabel();
   toast('Household updated ✓');
+  if (driveConnected || dropboxConnected) setTimeout(syncAll, 400);
 }
 
 async function switchProfile(key) {
@@ -5084,7 +5086,10 @@ async function addProfile() {
   await saveProfiles(profiles);
   if (nameEl) nameEl.value = '';
   renderProfileList();
+  renderSettingsHouseholdList();
   toast(`"${name}" created — switch to it to set it up`);
+  // Sync so new household persists across devices and reloads
+  if (driveConnected || dropboxConnected) setTimeout(syncAll, 400);
 }
 
 async function deleteProfile(key) {
@@ -5095,7 +5100,9 @@ async function deleteProfile(key) {
   await saveProfiles(profiles);
   if (activeProfile === key) await loadProfile('default');
   renderProfileList();
+  renderSettingsHouseholdList();
   toast(`"${name}" deleted`);
+  if (driveConnected || dropboxConnected) setTimeout(syncAll, 400);
 }
 
 // ═══════════════════════════════════════════
@@ -8807,6 +8814,26 @@ async function syncNow() {
         remote.deletedIds.forEach(id => merged.add(id));
         await saveDeletedIds(merged);
       }
+      // Merge household directory — adds any new households created on other devices
+      if (remote.householdDir && typeof remote.householdDir === 'object') {
+        const localProfiles = await getProfiles();
+        let changed = false;
+        Object.entries(remote.householdDir).forEach(([key, meta]) => {
+          if (!localProfiles[key]) {
+            // New household from another device — add skeleton entry
+            localProfiles[key] = { name: meta.name, colour: meta.colour, items: [], settings: {}, reminders: [], groceries: [], departments: [] };
+            changed = true;
+          } else {
+            // Update name/colour if changed
+            if (meta.name && localProfiles[key].name !== meta.name) { localProfiles[key].name = meta.name; changed = true; }
+            if (meta.colour && localProfiles[key].colour !== meta.colour) { localProfiles[key].colour = meta.colour; changed = true; }
+          }
+        });
+        if (changed) {
+          await saveProfiles(localProfiles);
+          renderSettingsHouseholdList();
+        }
+      }
       scheduleRender(...RENDER_REGIONS);
     }
 
@@ -8817,10 +8844,17 @@ async function syncNow() {
     const tombstones   = await loadDeletedIds();
     tombstones.forEach(id => { if (uploadedIds.has(id)) tombstones.delete(id); });
     await saveDeletedIds(tombstones);
+    // Include household directory (names/colours only, not full item data)
+    // so the household list survives reloads and multi-device sync
+    const allProfiles  = await getProfiles();
+    const householdDir = Object.fromEntries(
+      Object.entries(allProfiles).map(([k, p]) => [k, { name: p.name, colour: p.colour }])
+    );
     const payload = JSON.stringify({
       items, settings, lastSynced: settings.lastSynced,
       groceries: groceryItems, departments: groceryDepts,
       reminders, deletedIds: [...tombstones],
+      householdDir, activeProfile,
     });
     if (_shareState) await proxyWriteDrive(payload);
     else               await drivePush(payload);
@@ -10206,18 +10240,21 @@ async function saveShareTarget() {
   if (!name) { toast('Enter a name for this person'); return; }
   const code      = document.getElementById('share-target-code').value;
   const colour    = _shareTargetColour;
-  const ownerName = (await getProfiles())['default']?.name || 'Home';
+  const profiles  = await getProfiles();
+  const ownerName = profiles['default']?.name || 'Home';
   const btn = document.getElementById('share-target-save-btn');
   if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
 
   try {
     if (code) {
       // Update existing
-      await fetch(`${WORKER_URL}/share/update`, {
+      const res = await fetch(`${WORKER_URL}/share/update`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code, name, type: _shareTargetType, colour, households: _shareTargetPerms }),
       });
+      if (!res.ok) { const d = await res.json().catch(()=>({})); throw new Error(d.error || 'Update failed'); }
       toast(`Updated ${name} ✓`);
+      if (btn) { btn.textContent = 'Save changes'; btn.disabled = false; }
     } else {
       // Create new
       const res  = await fetch(`${WORKER_URL}/share/create`, {
@@ -10226,20 +10263,23 @@ async function saveShareTarget() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed');
-      // Auto-enable household mode when first share target is created
+      // Auto-enable household mode
       if (!_householdEnabled) {
         _householdEnabled = true;
-        try { localStorage.setItem('stockroom_household', JSON.stringify({ enabled: true, name: _householdName, colour: _householdColour })); } catch(e) {}
+        try { localStorage.setItem('stockroom_household', JSON.stringify({ enabled: true, colour: _householdColour })); } catch(e) {}
         connectPresence();
       }
       const link = data.link || `https://art-bot5000.github.io/stockroom/?join=${data.code}`;
       document.getElementById('share-link-value').textContent = link;
       document.getElementById('share-link-section').style.display = 'block';
-      document.getElementById('share-target-save-btn').textContent = 'Done';
+      if (btn) { btn.textContent = 'Done'; btn.disabled = false; }
       _shareTargetDone = true;
     }
     await loadShareTargets();
+    // Sync share target changes to Drive so they survive reloads
+    if (driveConnected || dropboxConnected) setTimeout(syncAll, 600);
   } catch(err) {
+    console.error('saveShareTarget:', err);
     toast('Could not save: ' + err.message);
     if (btn) { btn.textContent = code ? 'Save changes' : 'Create & get link'; btn.disabled = false; }
   }
