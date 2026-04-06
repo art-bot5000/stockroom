@@ -8863,19 +8863,23 @@ async function syncNow() {
   } catch(err) {
     console.error('Drive sync error:', err);
     if (err.message === 'NOT_CONNECTED') {
-      // Backend has no refresh token — prompt user to connect Drive
       updateSyncPill('error');
       const label = document.getElementById('sync-label');
       if (label) label.textContent = 'Connect Drive';
-      // Only show the prompt once per session
       if (!sessionStorage.getItem('connect_drive_prompted')) {
         sessionStorage.setItem('connect_drive_prompted', '1');
         toast('Connect Google Drive in Settings to enable sync');
       }
+    } else if (err.message === 'OWNER_NOT_CONNECTED') {
+      updateSyncPill('error');
+      toast('The household owner needs to reconnect Google Drive');
+    } else if (err.message?.startsWith('ACCESS_DENIED')) {
+      updateSyncPill('error');
+      toast('Access denied — your invite link may have been revoked');
     } else {
       updateSyncPill('error');
       if (!err.message.includes('fetch') && !err.message.includes('NetworkError')) {
-        toast('Sync failed — will retry automatically');
+        toast('Sync failed — ' + err.message);
       }
     }
   }
@@ -10026,11 +10030,15 @@ function leaveHousehold() { leaveShare(); }
 
 // ── Proxy read/write used when _sharedFileId is set ──────
 async function proxyReadDrive() {
-  // Shared user — pull via backend using owner's token + our share code for permission check
   const code   = _shareState?.code || '';
   const hParam = activeProfile && activeProfile !== 'default' ? `&household=${encodeURIComponent(activeProfile)}` : '';
   const res    = await fetch(`${WORKER_URL}/sync/pull?share=${encodeURIComponent(code)}${hParam}`);
-  if (res.status === 404) return null; // no data yet for this household
+  if (res.status === 404) return null;
+  if (res.status === 403) {
+    const d = await res.json().catch(() => ({}));
+    throw new Error('ACCESS_DENIED: ' + (d.error || 'No access'));
+  }
+  if (res.status === 503) throw new Error('OWNER_NOT_CONNECTED');
   if (!res.ok) throw new Error('Proxy read failed: ' + res.status);
   return res.json();
 }
