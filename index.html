@@ -774,11 +774,6 @@
   <button class="btn btn-blue btn-sm" onclick="syncNowAndDismissBanner()">Sync Now</button>
 </div>
 
-<!-- Drive re-auth banner -->
-<div id="reauth-banner" style="display:none;background:rgba(232,80,80,0.1);border-bottom:1px solid rgba(232,80,80,0.3);padding:10px 20px;align-items:center;justify-content:space-between;gap:12px;font-size:13px">
-  <span>🔑 <strong>Drive session expired</strong> — tap to reconnect and resume syncing</span>
-  <button class="btn btn-sm" style="background:rgba(232,80,80,0.2);border:1px solid rgba(232,80,80,0.4);color:var(--danger);white-space:nowrap" onclick="triggerReAuth()">Reconnect →</button>
-</div>
 
 <!-- Incomplete items nudge banner -->
 <div id="incomplete-banner" style="display:none;background:rgba(232,168,56,0.12);border-bottom:1px solid rgba(232,168,56,0.3);padding:10px 20px;align-items:center;justify-content:space-between;gap:12px;font-size:13px;cursor:pointer" onclick="scrollToIncomplete()">
@@ -2051,9 +2046,7 @@ let compactView = false;
 let activeProfile = 'default'; // household profile key
 
 // Drive state
-let accessToken    = null;
-let driveFileId    = null;
-let driveConnected = false;
+let driveConnected = false; // true after one-time OAuth setup
 
 // Dropbox state
 let dropboxToken     = null;
@@ -5625,11 +5618,9 @@ async function checkCloudAhead() {
 
     if (_sharedFileId) {
       remoteModified = await proxyGetModifiedTime();
-    } else if (driveConnected && accessToken && driveFileId) {
-      const res = await fetch(
-        `https://www.googleapis.com/drive/v3/files/${driveFileId}?fields=modifiedTime`,
-        { headers: { Authorization: 'Bearer ' + accessToken } }
-      );
+    } else if (driveConnected) {
+      // Use backend proxy — no access token needed
+      const res = await fetch(`${WORKER_URL}/sync/modified`);
       if (res.ok) remoteModified = (await res.json()).modifiedTime;
     } else if (dropboxConnected && dropboxToken) {
       const res = await fetch('https://api.dropboxapi.com/2/files/get_metadata', {
@@ -8211,7 +8202,7 @@ async function connectEmailReports() {
   const dayOfWeek  = document.getElementById('email-day')?.value       || 'monday';
 
   // Build state param containing registration details
-  const state = btoa(JSON.stringify({ email, frequency, dayOfWeek, driveFileId }));
+  const state = btoa(JSON.stringify({ email, frequency, dayOfWeek }));
 
   // Build OAuth URL pointing to Worker's /auth endpoint as redirect
   const authUrl = 'https://accounts.google.com/o/oauth2/v2/auth'
@@ -8288,7 +8279,7 @@ async function updateEmailSettings() {
     await fetch(`${WORKER_URL}/register`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ email: emailAddress, frequency, dayOfWeek, driveFileId }),
+      body: JSON.stringify({ email: emailAddress, frequency, dayOfWeek }),
     });
     renderEmailSettingsUI();
     toast('Email schedule updated ✓');
@@ -8336,40 +8327,31 @@ async function handleOAuthRedirect() {
   if (driveAuth) {
     history.replaceState(null, '', location.pathname);
     if (driveAuth === 'success') {
-      fetch(`${WORKER_URL}/auth/token`)
-        .then(r => r.json())
-        .then(data => {
-          if (data.access_token) {
-            accessToken    = data.access_token;
-            driveConnected = true;
-            try { sessionStorage.setItem('stockroom_access_token', data.access_token); } catch(e){}
-            try { localStorage.setItem('stockroom_drive', JSON.stringify({ driveFileId, driveConnected })); } catch(e){}
-            startProactiveTokenRefresh();
-            updateSyncUI();
-            const wizardStep = localStorage.getItem('stockroom_wizard_step');
-            if (wizardStep === '2') { localStorage.removeItem('stockroom_wizard_step'); wizardNext(); }
-            syncNow().then(() => {
-              try {
-                const preAuthView = sessionStorage.getItem('stockroom_pre_auth_view');
-                sessionStorage.removeItem('stockroom_pre_auth_view');
-                if (preAuthView === 'settings') {
-                  const tab = [...document.querySelectorAll('.tab')].find(t => t.textContent.includes('Settings'));
-                  if (tab) showView('settings', tab);
-                } else {
-                  // Came from wizard — go to Stockroom
-                  localStorage.setItem('stockroom_seen', '1');
-                  document.getElementById('wizard').style.display = 'none';
-                  const stockTab = [...document.querySelectorAll('.tab')].find(t => t.textContent.includes('Stockroom'));
-                  if (stockTab) showView('stock', stockTab);
-                }
-              } catch(e){}
-            });
+      // Refresh token is now stored in backend KV — frontend just sets connected flag
+      driveConnected = true;
+      try { localStorage.setItem('stockroom_drive', JSON.stringify({ driveConnected })); } catch(e){}
+      updateSyncUI();
+      const wizardStep = localStorage.getItem('stockroom_wizard_step');
+      if (wizardStep === '2') { localStorage.removeItem('stockroom_wizard_step'); wizardNext(); }
+      // First sync via backend proxy — no access token needed
+      syncNow().then(() => {
+        try {
+          const preAuthView = sessionStorage.getItem('stockroom_pre_auth_view');
+          sessionStorage.removeItem('stockroom_pre_auth_view');
+          if (preAuthView === 'settings') {
+            const tab = [...document.querySelectorAll('.tab')].find(t => t.textContent.includes('Settings'));
+            if (tab) showView('settings', tab);
+          } else {
+            localStorage.setItem('stockroom_seen', '1');
+            document.getElementById('wizard').style.display = 'none';
+            const stockTab = [...document.querySelectorAll('.tab')].find(t => t.textContent.includes('Stockroom'));
+            if (stockTab) showView('stock', stockTab);
           }
-        })
-        .catch(e => { console.error('Token fetch failed:', e); toast('Drive connection failed — try again'); });
+        } catch(e){}
+      });
     } else {
       const reason = qParams.get('reason') || 'unknown';
-      alert(`Drive connection failed: ${reason}\n\nCheck the browser console and Cloudflare Worker logs for more detail.`);
+      alert(`Drive connection failed: ${reason}`);
       toast(`Drive connection failed: ${reason}`);
     }
     return;
@@ -8417,109 +8399,40 @@ async function handleOAuthRedirect() {
   }
 }
 
+// ── Drive sync via backend proxy ─────────────────────────
+// The frontend never talks to Drive directly. All reads/writes
+// go through WORKER_URL which uses the stored refresh token.
+// No access token, no sessionStorage token, no re-auth needed.
+
+async function drivePull() {
+  const res = await fetch(`${WORKER_URL}/sync/pull`);
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `Pull failed: ${res.status}`);
+  }
+  return res.json();
+}
+
+async function drivePush(payload) {
+  const res = await fetch(`${WORKER_URL}/sync/push`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    payload,
+  });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({}));
+    throw new Error(err.error || `Push failed: ${res.status}`);
+  }
+}
+
 async function syncNow() {
   if (!driveConnected && !_sharedFileId) return;
-
-  // ── Joined household mode: use backend proxy ──────────────
-  if (_sharedFileId) {
-    updateSyncPill('syncing');
-    try {
-      const remote = await proxyReadDrive();
-      if (remote && Array.isArray(remote.items)) {
-        const localLastSynced  = settings.lastSynced ? new Date(settings.lastSynced).getTime() : 0;
-        const remoteLastSynced = remote.lastSynced   ? new Date(remote.lastSynced).getTime()   : 0;
-        const remoteWins       = remoteLastSynced > localLastSynced;
-        items = await mergeItems(items, remote.items, remoteWins);
-        await saveData();
-        if (remote.settings) {
-          const localTags = settings.customTags;
-          settings = { ...remote.settings, ...settings };
-          const remoteTags = remote.settings.customTags || [];
-          settings.customTags = (localTags||[]).filter(t=>t&&t.trim()).length >= remoteTags.filter(t=>t&&t.trim()).length ? (localTags||[]) : remoteTags;
-          await _saveSettings();
-        }
-        if (remote.groceries && (remoteWins || remote.groceries.length > groceryItems.length)) {
-          groceryItems = remote.groceries; await saveGrocery();
-        }
-        if (remote.departments?.length && (remoteWins || remote.departments.length > groceryDepts.length)) {
-          groceryDepts = remote.departments; await saveGroceryDepts();
-        }
-        if (remote.reminders?.length && (remoteWins || remote.reminders.length > reminders.length)) {
-          reminders = remote.reminders; await saveReminders();
-        }
-        if (remote.deletedIds) {
-          const merged = await loadDeletedIds();
-          remote.deletedIds.forEach(id => merged.add(id));
-          await saveDeletedIds(merged);
-        }
-        scheduleRender(...RENDER_REGIONS);
-      }
-      settings.lastSynced = new Date().toISOString();
-      await _saveSettings();
-      const uploadedIds = new Set(items.map(i => i.id));
-      const tombstones  = await loadDeletedIds();
-      tombstones.forEach(id => { if (uploadedIds.has(id)) tombstones.delete(id); });
-      await saveDeletedIds(tombstones);
-      await proxyWriteDrive(JSON.stringify({
-        items, settings, lastSynced: settings.lastSynced,
-        groceries: groceryItems, departments: groceryDepts, reminders, deletedIds: [...tombstones],
-      }));
-      hideReAuthBanner();
-      updateSyncPill('synced');
-    } catch(err) {
-      console.error('Proxy sync error:', err);
-      updateSyncPill('error');
-    }
-    return;
-  }
-
-  // ── Owner mode: direct Drive access (existing logic) ──────
-  if (!accessToken) { silentReAuth(); return; }
   updateSyncPill('syncing');
   try {
-    // ── Step 1: Find the Drive file if we don't have its ID yet ──
-    if (!driveFileId) {
-      const res = await fetch(
-        `https://www.googleapis.com/drive/v3/files?q=name='${FILE_NAME}'+and+trashed=false&fields=files(id,modifiedTime)`,
-        { headers: { Authorization: 'Bearer ' + accessToken } }
-      );
-      if (!res.ok) throw new Error('Drive search failed: ' + res.status);
-      const data = await res.json();
-      if (data.files && data.files.length) {
-        driveFileId = data.files[0].id;
-      } else {
-        // No file exists yet — create it and upload current data
-        const meta = await fetch('https://www.googleapis.com/drive/v3/files', {
-          method: 'POST',
-          headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ name: FILE_NAME, mimeType: 'application/json' })
-        });
-        if (!meta.ok) throw new Error('Drive create failed: ' + meta.status);
-        const metaData = await meta.json();
-        driveFileId = metaData.id;
-        try { localStorage.setItem('stockroom_drive', JSON.stringify({ driveFileId, driveConnected })); } catch(e){}
-        await uploadToDrive(JSON.stringify({
-          items, settings, lastSynced: new Date().toISOString(),
-          groceries: groceryItems, departments: groceryDepts, reminders, deletedIds: [...loadDeletedIds()],
-        }));
-        updateSyncPill('synced');
-        return;
-      }
-      try { localStorage.setItem('stockroom_drive', JSON.stringify({ driveFileId, driveConnected })); } catch(e){}
-    }
-
-    // ── Step 2: Download remote and do a proper timestamp merge ──
-    const fileRes = await fetch(
-      `https://www.googleapis.com/drive/v3/files/${driveFileId}?alt=media`,
-      { headers: { Authorization: 'Bearer ' + accessToken } }
-    );
-    if (!fileRes.ok) throw new Error('Drive read failed: ' + fileRes.status);
-
-    let remote = null;
-    try { remote = await fileRes.json(); } catch(e) {}
+    // Pull from backend (owner uses /sync/pull, joined members use proxy)
+    const remote = _sharedFileId ? await proxyReadDrive() : await drivePull();
 
     if (remote && Array.isArray(remote.items)) {
-      // Determine if remote file is newer overall (for items without updatedAt)
       const localLastSynced  = settings.lastSynced ? new Date(settings.lastSynced).getTime() : 0;
       const remoteLastSynced = remote.lastSynced   ? new Date(remote.lastSynced).getTime()   : 0;
       const remoteWins       = remoteLastSynced > localLastSynced;
@@ -8528,179 +8441,56 @@ async function syncNow() {
       await saveData();
 
       if (remote.settings) {
-        const localTags    = settings.customTags;
-        settings           = { ...remote.settings, ...settings };
-        const remoteTags   = remote.settings.customTags || [];
+        const localTags     = settings.customTags;
+        settings            = { ...remote.settings, ...settings };
+        const remoteTags    = remote.settings.customTags || [];
         const localDefined  = (localTags||[]).filter(t=>t&&t.trim()).length;
         const remoteDefined = remoteTags.filter(t=>t&&t.trim()).length;
         settings.customTags = localDefined >= remoteDefined ? (localTags||[]) : remoteTags;
         await _saveSettings();
       }
-
       if (remote.groceries) {
-        const localG  = groceryItems;
         const remoteG = remote.groceries;
-        if (remoteWins || remoteG.length > localG.length) {
-          groceryItems = remoteG;
-          await saveGrocery();
-        }
+        if (remoteWins || remoteG.length > groceryItems.length) { groceryItems = remoteG; await saveGrocery(); }
       }
-      if (remote.departments && remote.departments.length) {
-        const localD = groceryDepts;
-        if (remoteWins || remote.departments.length > localD.length) {
-          groceryDepts = remote.departments;
-          await saveGroceryDepts();
-        }
+      if (remote.departments?.length) {
+        if (remoteWins || remote.departments.length > groceryDepts.length) { groceryDepts = remote.departments; await saveGroceryDepts(); }
       }
       if (remote.reminders && Array.isArray(remote.reminders)) {
-        if (remoteWins || remote.reminders.length > reminders.length) {
-          reminders = remote.reminders;
-          await saveReminders();
-        }
+        if (remoteWins || remote.reminders.length > reminders.length) { reminders = remote.reminders; await saveReminders(); }
       }
       if (remote.deletedIds && Array.isArray(remote.deletedIds)) {
         const merged = await loadDeletedIds();
         remote.deletedIds.forEach(id => merged.add(id));
         await saveDeletedIds(merged);
       }
-
       scheduleRender(...RENDER_REGIONS);
     }
 
-    // ── Step 3: Upload merged data back ──
+    // Push merged data back
     settings.lastSynced = new Date().toISOString();
     await _saveSettings();
-    const uploadedIds = new Set(items.map(i => i.id));
-    const remainingTombstones = await loadDeletedIds();
-    remainingTombstones.forEach(id => { if (uploadedIds.has(id)) remainingTombstones.delete(id); });
-    await saveDeletedIds(remainingTombstones);
-    await uploadToDrive(JSON.stringify({
+    const uploadedIds  = new Set(items.map(i => i.id));
+    const tombstones   = await loadDeletedIds();
+    tombstones.forEach(id => { if (uploadedIds.has(id)) tombstones.delete(id); });
+    await saveDeletedIds(tombstones);
+    const payload = JSON.stringify({
       items, settings, lastSynced: settings.lastSynced,
-      groceries: groceryItems, departments: groceryDepts, reminders, deletedIds: [...remainingTombstones],
-    }));
-    hideReAuthBanner();
-    updateSyncPill('synced');
+      groceries: groceryItems, departments: groceryDepts,
+      reminders, deletedIds: [...tombstones],
+    });
+    if (_sharedFileId) await proxyWriteDrive(payload);
+    else               await drivePush(payload);
 
+    updateSyncPill('synced');
   } catch(err) {
     console.error('Drive sync error:', err);
-    // If we got a 401 the token has expired — get a fresh one silently
-    if (err.message.includes('401')) {
-      accessToken = null;
-      silentReAuth();
-    } else {
-      updateSyncPill('error');
+    updateSyncPill('error');
+    // Only show error toast for non-transient failures
+    if (!err.message.includes('503') && !err.message.includes('fetch')) {
+      toast('Sync failed — will retry automatically');
     }
   }
-}
-
-let _reAuthInProgress    = false;
-let _proactiveRefreshTimer = null;
-
-// Proactively refresh the access token every 50 minutes — well before the 1-hour expiry.
-// This means the token is always fresh and syncs never hit a 401.
-function startProactiveTokenRefresh() {
-  stopProactiveTokenRefresh();
-  _proactiveRefreshTimer = setInterval(async () => {
-    if (!driveConnected || !WORKER_URL) return;
-    try {
-      const res  = await fetch(`${WORKER_URL}/auth/refresh?provider=google`);
-      const data = await res.json();
-      if (res.ok && data.access_token) {
-        accessToken = data.access_token;
-        try { sessionStorage.setItem('stockroom_access_token', data.access_token); } catch(e){}
-        console.log('Drive: proactive token refresh succeeded');
-        hideReAuthBanner(); // clear any stale banner
-      }
-    } catch(e) {
-      console.warn('Drive: proactive refresh failed:', e.message);
-    }
-  }, 50 * 60 * 1000); // every 50 minutes
-}
-
-function stopProactiveTokenRefresh() {
-  if (_proactiveRefreshTimer) { clearInterval(_proactiveRefreshTimer); _proactiveRefreshTimer = null; }
-}
-
-async function silentReAuth() {
-  if (!driveConnected || _reAuthInProgress) return;
-  _reAuthInProgress = true;
-  updateSyncPill('syncing');
-
-  try {
-    const res  = await fetch(`${WORKER_URL}/auth/refresh?provider=google`);
-    const data = await res.json();
-    if (res.ok && data.access_token) {
-      accessToken = data.access_token;
-      try { sessionStorage.setItem('stockroom_access_token', data.access_token); } catch(e){}
-      _reAuthInProgress = false;
-      console.log('Drive: silent token refresh succeeded');
-      hideReAuthBanner();
-      await syncNow();
-      return;
-    }
-  } catch(e) {
-    console.warn('Drive: silent refresh failed:', e.message);
-  }
-
-  // Silent refresh failed — show banner but keep retrying automatically every 30s
-  // so it self-heals if the network was temporarily down
-  _reAuthInProgress = false;
-  accessToken = null;
-  updateSyncPill('error');
-  showReAuthBanner();
-}
-
-let _bannerRetryTimer = null;
-
-function showReAuthBanner() {
-  const b = document.getElementById('reauth-banner');
-  if (b) b.style.display = 'flex';
-  // Auto-retry silent refresh every 30s — self-heals if it was a transient network failure
-  if (!_bannerRetryTimer) {
-    _bannerRetryTimer = setInterval(async () => {
-      if (!driveConnected) { clearInterval(_bannerRetryTimer); _bannerRetryTimer = null; return; }
-      try {
-        const res  = await fetch(`${WORKER_URL}/auth/refresh?provider=google`);
-        const data = await res.json();
-        if (res.ok && data.access_token) {
-          accessToken = data.access_token;
-          try { sessionStorage.setItem('stockroom_access_token', data.access_token); } catch(e){}
-          hideReAuthBanner();
-          toast('Drive reconnected ✓');
-          clearInterval(_bannerRetryTimer); _bannerRetryTimer = null;
-          await syncNow();
-        }
-      } catch(e) { /* still offline — keep retrying */ }
-    }, 30000);
-  }
-}
-
-function hideReAuthBanner() {
-  const b = document.getElementById('reauth-banner');
-  if (b) b.style.display = 'none';
-  if (_bannerRetryTimer) { clearInterval(_bannerRetryTimer); _bannerRetryTimer = null; }
-}
-
-function triggerReAuth() {
-  try {
-    const currentTab = [...document.querySelectorAll('.tab')].find(t => t.classList.contains('active'));
-    const viewName   = currentTab?.textContent?.trim() || '';
-    sessionStorage.setItem('stockroom_pre_auth_view', viewName.includes('Settings') ? 'settings' : 'stock');
-  } catch(e){}
-  hideReAuthBanner();
-  connectDrive();
-}
-
-async function uploadToDrive(payload) {
-  const res = await fetch(
-    `https://www.googleapis.com/upload/drive/v3/files/${driveFileId}?uploadType=media`,
-    {
-      method: 'PATCH',
-      headers: { Authorization: 'Bearer ' + accessToken, 'Content-Type': 'application/json' },
-      body: payload
-    }
-  );
-  if (!res.ok) throw new Error('Drive upload failed: ' + res.status);
 }
 
 // ═══════════════════════════════════════════
@@ -8908,11 +8698,7 @@ function updateDropboxUI() {
 
 async function signOutDrive() {
   if (!confirm('Sign out of Google Drive?\n\nYour data on Drive stays complete. Your local data on this device will remain unless you choose to clear it.')) return;
-  accessToken    = null;
   driveConnected = false;
-  driveFileId    = null;
-  stopProactiveTokenRefresh();
-  hideReAuthBanner();
   try { localStorage.removeItem('stockroom_drive'); } catch(e) {}
   updateSyncUI();
   toast('Signed out of Google Drive');
@@ -9626,17 +9412,18 @@ function updateHouseholdShareUI() {
 }
 
 async function createInviteCode() {
-  if (!driveConnected || !driveFileId) {
-    toast('Connect Google Drive first — the file ID is needed to create an invite');
+  if (!driveConnected) {
+    toast('Connect Google Drive first');
     return;
   }
   const btn = document.querySelector('[onclick="createInviteCode()"]');
   if (btn) { btn.textContent = '⏳ Generating…'; btn.disabled = true; }
   try {
+    // Backend uses its stored drive_file_id — no need to send it from frontend
     const res  = await fetch(`${WORKER_URL}/invite/create`, {
       method:  'POST',
       headers: { 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ fileId: driveFileId }),
+      body:    JSON.stringify({}),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Failed');
@@ -9880,15 +9667,10 @@ async function init() {
     console.log(`Stamped updatedAt on ${items.filter(i=>i.updatedAt===now).length} legacy items`);
   }
 
-  // Restore Drive state
+  // Restore Drive state — just the connected flag, no token needed
   try {
     const d = JSON.parse(localStorage.getItem('stockroom_drive')||'{}');
-    if (d.driveConnected) {
-      driveConnected = true;
-      driveFileId    = d.driveFileId || null;
-      accessToken = sessionStorage.getItem('stockroom_access_token') || null;
-      startProactiveTokenRefresh(); // keep token fresh proactively
-    }
+    if (d.driveConnected) driveConnected = true;
   } catch(e){}
 
   // Restore Dropbox state
