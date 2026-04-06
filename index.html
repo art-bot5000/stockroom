@@ -9864,6 +9864,12 @@ function loadShareState() {
   try {
     const raw = localStorage.getItem('stockroom_share_state');
     if (!raw) return;
+    // If this device has its own Drive connection it's the owner — never load a guest share state
+    const driveData = JSON.parse(localStorage.getItem('stockroom_drive') || '{}');
+    if (driveData.driveConnected) {
+      localStorage.removeItem('stockroom_share_state');
+      return;
+    }
     _shareState   = JSON.parse(raw);
     _sharedFileId = _shareState?._sharedFileId || null;
   } catch(e) {}
@@ -10194,6 +10200,7 @@ function setSharePerm(hKey, section, value) {
 }
 
 async function openAddShareTarget() {
+  if (!isOwner()) { toast('Only the household owner can manage share access'); return; }
   if (_shareTargets.length >= 5) { toast('Maximum 5 share targets reached'); return; }
   _shareTargetType   = 'family';
   _shareTargetPerms  = {};
