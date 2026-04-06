@@ -8682,8 +8682,13 @@ async function handleOAuthRedirect() {
       });
     } else {
       const reason = qParams.get('reason') || 'unknown';
-      alert(`Drive connection failed: ${reason}`);
-      toast(`Drive connection failed: ${reason}`);
+      // Map raw Google/OAuth errors to friendly messages
+      const friendly = reason.includes('Bad Request') || reason.includes('invalid_grant')
+        ? 'Sign-in expired — please try connecting Google Drive again'
+        : reason === 'no_code'
+        ? 'Sign-in was cancelled'
+        : `Drive connection failed: ${reason}`;
+      toast(friendly);
     }
     return;
   }
@@ -8724,7 +8729,7 @@ async function handleOAuthRedirect() {
         })
         .catch(e => { console.error('Dropbox token fetch failed:', e); toast('Dropbox connection failed — try again'); });
     } else {
-      toast(`Dropbox connection failed: ${qParams.get('reason') || 'unknown'}`);
+      toast('Dropbox sign-in expired or was cancelled — please try again');
     }
     return;
   }
