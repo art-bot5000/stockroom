@@ -1072,6 +1072,16 @@
         <button class="btn btn-primary btn-sm" id="send-reminder-btn" onclick="sendReminderEmail(true)">📧 Send Now</button>
       </div>
       <div id="email-status" style="font-size:12px;margin-top:8px;display:none"></div>
+      <div class="setting-row" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--glass-border)">
+        <div class="setting-info">
+          <h4>Server schedule status</h4>
+          <p id="kv-status-text" style="font-family:var(--mono);font-size:11px">Tap check to verify</p>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-ghost btn-sm" onclick="checkKVStatus()" id="kv-check-btn">Check</button>
+          <button class="btn btn-ghost btn-sm" onclick="repushToServer()" id="kv-repush-btn" title="Re-send your email and schedule to the server">Re-push</button>
+        </div>
+      </div>
     </div>
 
     <div class="settings-card">
@@ -1197,7 +1207,7 @@
     </div>
     <div class="settings-card">
       <h3>👥 Household Mode</h3>
-      <p style="font-size:13px;color:var(--muted);margin-bottom:14px;line-height:1.6">See who else is using the app in real time. Avatars appear in the header and the shopping list updates live when someone marks an item delivered.</p>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:14px;line-height:1.6">Share your stockroom data with another person. Each person uses their own Google account — no credentials are shared.</p>
       <div class="setting-row">
         <div class="setting-info"><h4>Enable household mode</h4><p>Shows live presence for all household members</p></div>
         <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
@@ -1213,6 +1223,39 @@
           <label class="form-label">Colour</label>
           <div id="household-colour-picker" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"></div>
         </div>
+
+        <!-- Shared file section -->
+        <div style="margin-top:16px;padding-top:16px;border-top:1px solid var(--glass-border)">
+          <h4 style="font-size:13px;font-weight:700;margin-bottom:10px">📂 Shared Data File</h4>
+          <div id="household-share-status" style="font-size:13px;color:var(--muted);margin-bottom:12px;line-height:1.6"></div>
+
+          <!-- Owner: generate invite -->
+          <div id="household-owner-section">
+            <button class="btn btn-ghost btn-sm" onclick="createInviteCode()" style="margin-bottom:8px">🔗 Generate invite code</button>
+            <div id="invite-code-display" style="display:none;margin-top:8px">
+              <div style="font-family:var(--mono);font-size:22px;letter-spacing:6px;font-weight:700;color:var(--accent);text-align:center;padding:16px;background:var(--surface);border-radius:10px;border:1px solid var(--border)" id="invite-code-value"></div>
+              <p style="font-size:12px;color:var(--muted);text-align:center;margin-top:6px">Share this code with your household. Valid for 24 hours.</p>
+              <button class="btn btn-ghost btn-sm full" style="margin-top:6px" onclick="copyInviteCode()">📋 Copy code</button>
+            </div>
+          </div>
+
+          <!-- Partner: join via code -->
+          <div id="household-join-section" style="margin-top:10px;padding-top:10px;border-top:1px solid var(--glass-border)">
+            <p style="font-size:12px;color:var(--muted);margin-bottom:8px">Have an invite code? Enter it below to sync to the shared file.</p>
+            <div style="display:flex;gap:8px">
+              <input class="form-input" id="invite-code-input" type="text" placeholder="e.g. A1B2C3" maxlength="6" autocomplete="off"
+                style="text-transform:uppercase;font-family:var(--mono);letter-spacing:3px;font-size:16px;text-align:center">
+              <button class="btn btn-primary btn-sm" onclick="joinHousehold()">Join</button>
+            </div>
+          </div>
+
+          <!-- Joined: leave household -->
+          <div id="household-joined-section" style="display:none;margin-top:10px;padding-top:10px;border-top:1px solid var(--glass-border)">
+            <p style="font-size:12px;color:var(--ok);margin-bottom:8px">✓ Syncing to shared household file</p>
+            <button class="btn btn-ghost btn-sm" onclick="leaveHousehold()" style="color:var(--danger);border-color:var(--danger)">Leave household</button>
+          </div>
+        </div>
+
         <div id="household-status" style="margin-top:12px;font-size:12px;color:var(--muted);font-family:var(--mono)"></div>
       </div>
     </div>
@@ -2525,6 +2568,56 @@ function getItemsDueWithin(days) {
 
 // Push the user's schedule + current items to the Worker KV
 // so the hourly cron can act on it without the app being open
+async function checkKVStatus() {
+  const btn    = document.getElementById('kv-check-btn');
+  const status = document.getElementById('kv-status-text');
+  if (!WORKER_URL) { if (status) status.textContent = '✗ No backend URL configured'; return; }
+  if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
+  try {
+    const res  = await fetch(`${WORKER_URL}/debug-schedule`);
+    const data = await res.json();
+    const ok   = s => s && s.startsWith('✓');
+    const lines = [
+      `email: ${data.email}`,
+      `schedule: ${typeof data.schedule === 'object' && data.schedule ? '✓ set' : data.schedule}`,
+      `driveRefresh: ${data.driveRefresh}`,
+      `lastSent: ${data.lastSent}`,
+      data.nextSend ? `nextSend: ${data.nextSend}` : '',
+    ].filter(Boolean);
+    const allOk = ok(data.email) && data.schedule && data.schedule !== '✗ missing' && ok(data.driveRefresh);
+    if (status) {
+      status.style.color = allOk ? 'var(--ok)' : 'var(--danger)';
+      status.textContent = (allOk ? '✓ ' : '✗ ') + lines.join(' · ');
+    }
+    if (!allOk) toast('⚠️ Server KV is missing data — tap Re-push to fix');
+  } catch(err) {
+    if (status) { status.style.color = 'var(--danger)'; status.textContent = '✗ Could not reach server'; }
+  } finally {
+    if (btn) { btn.textContent = 'Check'; btn.disabled = false; }
+  }
+}
+
+async function repushToServer() {
+  const btn    = document.getElementById('kv-repush-btn');
+  const status = document.getElementById('kv-status-text');
+  if (!WORKER_URL) { toast('No backend URL configured'); return; }
+  if (!settings.email) { toast('Set your email address first'); return; }
+  if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
+  try {
+    await pushScheduleToWorker();
+    // Also push current items snapshot
+    await pushItemsToWorker();
+    if (status) { status.style.color = 'var(--ok)'; status.textContent = '✓ Re-pushed — tap Check to verify'; }
+    toast('Settings re-pushed to server ✓');
+    // Auto-check after 1s
+    setTimeout(checkKVStatus, 1000);
+  } catch(err) {
+    toast('Re-push failed: ' + err.message);
+  } finally {
+    if (btn) { btn.textContent = 'Re-push'; btn.disabled = false; }
+  }
+}
+
 async function pushScheduleToWorker() {
   if (!WORKER_URL || !settings.email || !settings.emailStartDate) return;
   try {
@@ -5506,11 +5599,13 @@ setInterval(() => {
 
 // Check if cloud is ahead of local — if so, sync silently
 async function checkCloudAhead() {
-  if (!driveConnected && !dropboxConnected) return;
+  if (!driveConnected && !dropboxConnected && !_sharedFileId) return;
   try {
     let remoteModified = null;
 
-    if (driveConnected && accessToken && driveFileId) {
+    if (_sharedFileId) {
+      remoteModified = await proxyGetModifiedTime();
+    } else if (driveConnected && accessToken && driveFileId) {
       const res = await fetch(
         `https://www.googleapis.com/drive/v3/files/${driveFileId}?fields=modifiedTime`,
         { headers: { Authorization: 'Bearer ' + accessToken } }
@@ -8302,12 +8397,63 @@ async function handleOAuthRedirect() {
 }
 
 async function syncNow() {
-  if (!driveConnected) return;
-  if (!accessToken) {
-    // Token missing — try silent re-auth (no UI)
-    silentReAuth();
+  if (!driveConnected && !_sharedFileId) return;
+
+  // ── Joined household mode: use backend proxy ──────────────
+  if (_sharedFileId) {
+    updateSyncPill('syncing');
+    try {
+      const remote = await proxyReadDrive();
+      if (remote && Array.isArray(remote.items)) {
+        const localLastSynced  = settings.lastSynced ? new Date(settings.lastSynced).getTime() : 0;
+        const remoteLastSynced = remote.lastSynced   ? new Date(remote.lastSynced).getTime()   : 0;
+        const remoteWins       = remoteLastSynced > localLastSynced;
+        items = await mergeItems(items, remote.items, remoteWins);
+        await saveData();
+        if (remote.settings) {
+          const localTags = settings.customTags;
+          settings = { ...remote.settings, ...settings };
+          const remoteTags = remote.settings.customTags || [];
+          settings.customTags = (localTags||[]).filter(t=>t&&t.trim()).length >= remoteTags.filter(t=>t&&t.trim()).length ? (localTags||[]) : remoteTags;
+          await _saveSettings();
+        }
+        if (remote.groceries && (remoteWins || remote.groceries.length > groceryItems.length)) {
+          groceryItems = remote.groceries; await saveGrocery();
+        }
+        if (remote.departments?.length && (remoteWins || remote.departments.length > groceryDepts.length)) {
+          groceryDepts = remote.departments; await saveGroceryDepts();
+        }
+        if (remote.reminders?.length && (remoteWins || remote.reminders.length > reminders.length)) {
+          reminders = remote.reminders; await saveReminders();
+        }
+        if (remote.deletedIds) {
+          const merged = await loadDeletedIds();
+          remote.deletedIds.forEach(id => merged.add(id));
+          await saveDeletedIds(merged);
+        }
+        scheduleRender(...RENDER_REGIONS);
+      }
+      settings.lastSynced = new Date().toISOString();
+      await _saveSettings();
+      const uploadedIds = new Set(items.map(i => i.id));
+      const tombstones  = await loadDeletedIds();
+      tombstones.forEach(id => { if (uploadedIds.has(id)) tombstones.delete(id); });
+      await saveDeletedIds(tombstones);
+      await proxyWriteDrive(JSON.stringify({
+        items, settings, lastSynced: settings.lastSynced,
+        groceries: groceryItems, departments: groceryDepts, reminders, deletedIds: [...tombstones],
+      }));
+      hideReAuthBanner();
+      updateSyncPill('synced');
+    } catch(err) {
+      console.error('Proxy sync error:', err);
+      updateSyncPill('error');
+    }
     return;
   }
+
+  // ── Owner mode: direct Drive access (existing logic) ──────
+  if (!accessToken) { silentReAuth(); return; }
   updateSyncPill('syncing');
   try {
     // ── Step 1: Find the Drive file if we don't have its ID yet ──
@@ -9361,8 +9507,154 @@ function renderHouseholdColourPicker() {
   `).join('');
 }
 
+// ── Household sharing — file proxy ───────────────────────
+// _sharedFileId: set when this device joins another household.
+// When set, syncNow/uploadToDrive use the proxy endpoints instead of
+// calling Drive directly — the backend uses the owner's token.
+let _sharedFileId  = null;  // non-null means this device is a "joined" member
+let _inviteCode    = null;
+
+function loadHouseholdShareState() {
+  try {
+    const raw = localStorage.getItem('stockroom_household_share');
+    if (!raw) return;
+    const d = JSON.parse(raw);
+    _sharedFileId = d.fileId || null;
+  } catch(e) {}
+  updateHouseholdShareUI();
+}
+
+function saveHouseholdShareState() {
+  try {
+    if (_sharedFileId) {
+      localStorage.setItem('stockroom_household_share', JSON.stringify({ fileId: _sharedFileId }));
+    } else {
+      localStorage.removeItem('stockroom_household_share');
+    }
+  } catch(e) {}
+}
+
+function updateHouseholdShareUI() {
+  const joinedSection = document.getElementById('household-joined-section');
+  const joinSection   = document.getElementById('household-join-section');
+  const ownerSection  = document.getElementById('household-owner-section');
+  const statusEl      = document.getElementById('household-share-status');
+  if (!joinedSection) return;
+
+  if (_sharedFileId) {
+    joinedSection.style.display = 'block';
+    joinSection.style.display   = 'none';
+    ownerSection.style.display  = 'none';
+    if (statusEl) statusEl.textContent = 'Your data syncs to the shared household file. The owner\'s Drive is used — you don\'t need to connect your own.';
+  } else {
+    joinedSection.style.display = 'none';
+    joinSection.style.display   = 'block';
+    ownerSection.style.display  = 'block';
+    if (statusEl) statusEl.textContent = driveConnected
+      ? 'You are the file owner. Generate an invite code for others to join.'
+      : 'Connect Google Drive above, then generate an invite code for others to join.';
+  }
+}
+
+async function createInviteCode() {
+  if (!driveConnected || !driveFileId) {
+    toast('Connect Google Drive first — the file ID is needed to create an invite');
+    return;
+  }
+  const btn = document.querySelector('[onclick="createInviteCode()"]');
+  if (btn) { btn.textContent = '⏳ Generating…'; btn.disabled = true; }
+  try {
+    const res  = await fetch(`${WORKER_URL}/invite/create`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ fileId: driveFileId }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Failed');
+    _inviteCode = data.code;
+    document.getElementById('invite-code-value').textContent = data.code;
+    document.getElementById('invite-code-display').style.display = 'block';
+    toast('Invite code created — valid for 24 hours');
+  } catch(err) {
+    toast('Could not create invite: ' + err.message);
+  } finally {
+    if (btn) { btn.textContent = '🔗 Generate invite code'; btn.disabled = false; }
+  }
+}
+
+function copyInviteCode() {
+  const code = document.getElementById('invite-code-value')?.textContent?.trim();
+  if (!code) return;
+  navigator.clipboard?.writeText(code).then(() => toast('Code copied ✓')).catch(() => {
+    prompt('Copy this invite code:', code);
+  });
+}
+
+async function joinHousehold() {
+  const input = document.getElementById('invite-code-input');
+  const code  = (input?.value || '').trim().toUpperCase();
+  if (code.length < 4) { toast('Enter the full invite code'); return; }
+
+  const btn = document.querySelector('[onclick="joinHousehold()"]');
+  if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
+
+  try {
+    const res  = await fetch(`${WORKER_URL}/invite/join`, {
+      method:  'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body:    JSON.stringify({ code }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Invalid code');
+
+    _sharedFileId = data.fileId;
+    saveHouseholdShareState();
+    updateHouseholdShareUI();
+    toast('Joined household ✓ — syncing now');
+    // Immediately sync to pull the shared file
+    await syncAll();
+  } catch(err) {
+    toast('Could not join: ' + err.message);
+  } finally {
+    if (btn) { btn.textContent = 'Join'; btn.disabled = false; }
+  }
+}
+
+function leaveHousehold() {
+  if (!confirm('Leave the shared household?\n\nYour local data stays intact. You\'ll sync to your own Drive file from now on.')) return;
+  _sharedFileId = null;
+  saveHouseholdShareState();
+  updateHouseholdShareUI();
+  toast('Left household — syncing to your own Drive');
+  syncAll();
+}
+
+// ── Proxy read/write used when _sharedFileId is set ──────
+async function proxyReadDrive() {
+  const res = await fetch(`${WORKER_URL}/drive/read?fileId=${encodeURIComponent(_sharedFileId)}`);
+  if (!res.ok) throw new Error('Proxy read failed: ' + res.status);
+  return res.json();
+}
+
+async function proxyWriteDrive(payload) {
+  const res = await fetch(`${WORKER_URL}/drive/write?fileId=${encodeURIComponent(_sharedFileId)}`, {
+    method:  'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body:    payload,
+  });
+  if (!res.ok) throw new Error('Proxy write failed: ' + res.status);
+}
+
+async function proxyGetModifiedTime() {
+  const res = await fetch(`${WORKER_URL}/drive/modified?fileId=${encodeURIComponent(_sharedFileId)}`);
+  if (!res.ok) return null;
+  const data = await res.json();
+  return data.modifiedTime || null;
+}
+
 function initHouseholdSettingsUI() {
   loadHouseholdSettings();
+  loadHouseholdShareState();
   const toggle = document.getElementById('household-mode-toggle');
   const nameEl = document.getElementById('household-display-name');
   if (toggle) toggle.checked = _householdEnabled;
