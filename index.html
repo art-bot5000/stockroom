@@ -1703,7 +1703,7 @@
     </div>
     <div class="modal-footer">
       <button class="btn btn-ghost" onclick="closeModal('share-target-modal')">Cancel</button>
-      <button class="btn btn-primary" id="share-target-save-btn" onclick="saveShareTarget()">Create &amp; get link</button>
+      <button class="btn btn-primary" id="share-target-save-btn" onclick="handleShareTargetBtn()">Create &amp; get link</button>
     </div>
   </div>
 </div>
@@ -5876,11 +5876,11 @@ setInterval(() => {
 
 // Check if cloud is ahead of local — if so, sync silently
 async function checkCloudAhead() {
-  if (!driveConnected && !dropboxConnected && !_sharedFileId) return;
+  if (!driveConnected && !dropboxConnected && !_shareState) return;
   try {
     let remoteModified = null;
 
-    if (_sharedFileId) {
+    if (_shareState) {
       remoteModified = await proxyGetModifiedTime();
     } else if (driveConnected) {
       // Use backend proxy — no access token needed
@@ -5936,11 +5936,13 @@ function toggleFilters() {
   const icon  = document.getElementById('filter-toggle-icon');
   panel.style.display = filtersOpen ? 'flex' : 'none';
   icon.textContent = filtersOpen ? '▾' : '▸';
-  try { localStorage.setItem('stockroom_filters_open', filtersOpen ? '1' : ''); } catch(e) {}
+  // Use sessionStorage so it resets to closed on each app load
+  try { sessionStorage.setItem('stockroom_filters_open', filtersOpen ? '1' : ''); } catch(e) {}
 }
 
 function loadFilterPanelState() {
-  filtersOpen = !!localStorage.getItem('stockroom_filters_open');
+  // Always default to closed — only restore if opened in this session
+  filtersOpen = !!sessionStorage.getItem('stockroom_filters_open');
   const panel = document.getElementById('filter-panel');
   const icon  = document.getElementById('filter-toggle-icon');
   if (panel) panel.style.display = filtersOpen ? 'flex' : 'none';
@@ -8762,11 +8764,11 @@ async function drivePush(payload) {
 }
 
 async function syncNow() {
-  if (!driveConnected && !_sharedFileId) return;
+  if (!driveConnected && !_shareState) return;
   updateSyncPill('syncing');
   try {
     // Pull from backend (owner uses /sync/pull, joined members use proxy)
-    const remote = _sharedFileId ? await proxyReadDrive() : await drivePull();
+    const remote = _shareState ? await proxyReadDrive() : await drivePull();
 
     if (remote && Array.isArray(remote.items)) {
       const localLastSynced  = settings.lastSynced ? new Date(settings.lastSynced).getTime() : 0;
@@ -8815,7 +8817,7 @@ async function syncNow() {
       groceries: groceryItems, departments: groceryDepts,
       reminders, deletedIds: [...tombstones],
     });
-    if (_sharedFileId) await proxyWriteDrive(payload);
+    if (_shareState) await proxyWriteDrive(payload);
     else               await drivePush(payload);
 
     updateSyncPill('synced');
@@ -9979,25 +9981,34 @@ function leaveHousehold() { leaveShare(); }
 
 // ── Proxy read/write used when _sharedFileId is set ──────
 async function proxyReadDrive() {
-  const res = await fetch(`${WORKER_URL}/drive/read?fileId=${encodeURIComponent(_sharedFileId)}`);
+  // Shared user — pull via backend using owner's token + our share code for permission check
+  const code   = _shareState?.code || '';
+  const hParam = activeProfile && activeProfile !== 'default' ? `&household=${encodeURIComponent(activeProfile)}` : '';
+  const res    = await fetch(`${WORKER_URL}/sync/pull?share=${encodeURIComponent(code)}${hParam}`);
+  if (res.status === 404) return null; // no data yet for this household
   if (!res.ok) throw new Error('Proxy read failed: ' + res.status);
   return res.json();
 }
 
 async function proxyWriteDrive(payload) {
-  const res = await fetch(`${WORKER_URL}/drive/write?fileId=${encodeURIComponent(_sharedFileId)}`, {
+  // Shared user — push via backend, permission validated server-side with share code
+  const code   = _shareState?.code || '';
+  const hParam = activeProfile && activeProfile !== 'default' ? `&household=${encodeURIComponent(activeProfile)}` : '';
+  const res    = await fetch(`${WORKER_URL}/sync/push?share=${encodeURIComponent(code)}${hParam}`, {
     method:  'POST',
     headers: { 'Content-Type': 'application/json' },
     body:    payload,
   });
+  if (res.status === 403) throw new Error('READ_ONLY');
   if (!res.ok) throw new Error('Proxy write failed: ' + res.status);
 }
 
 async function proxyGetModifiedTime() {
-  const res = await fetch(`${WORKER_URL}/drive/modified?fileId=${encodeURIComponent(_sharedFileId)}`);
+  const code   = _shareState?.code || '';
+  const hParam = activeProfile && activeProfile !== 'default' ? `&household=${encodeURIComponent(activeProfile)}` : '';
+  const res    = await fetch(`${WORKER_URL}/sync/modified?share=${encodeURIComponent(code)}${hParam}`);
   if (!res.ok) return null;
-  const data = await res.json();
-  return data.modifiedTime || null;
+  return (await res.json()).modifiedTime || null;
 }
 
 // ── Share Target Management ───────────────────────────────
@@ -10005,6 +10016,15 @@ let _shareTargets     = []; // cached from backend
 let _shareTargetType  = 'family';
 let _shareTargetPerms = {}; // { householdKey: { stockroom, groceries, reminders, savings, report } }
 let _shareTargetColour = HOUSEHOLD_COLOURS[0];
+let _shareTargetDone   = false; // true after link is generated — btn becomes Done
+
+function handleShareTargetBtn() {
+  if (_shareTargetDone) {
+    closeModal('share-target-modal');
+  } else {
+    saveShareTarget();
+  }
+}
 
 async function loadShareTargets() {
   if (!WORKER_URL || !isOwner()) return;
@@ -10143,12 +10163,13 @@ async function openAddShareTarget() {
   const defaults     = SHARE_TYPE_DEFAULTS.family;
   Object.keys(profiles).forEach(k => { _shareTargetPerms[k] = { ...defaults }; });
 
+  _shareTargetDone   = false;
   document.getElementById('share-target-modal-title').textContent = '👤 Add Person';
   document.getElementById('share-target-code').value = '';
   document.getElementById('share-target-name').value = '';
   document.getElementById('share-link-section').style.display = 'none';
   document.getElementById('share-target-save-btn').textContent = 'Create & get link';
-  document.getElementById('share-target-save-btn').onclick = saveShareTarget;
+  document.getElementById('share-target-save-btn').onclick = null;
   selectShareType('family', document.querySelector('.share-type-btn[data-type="family"]'));
   renderShareTargetColourPicker(_shareTargetColour);
   await renderShareHouseholdPerms();
@@ -10162,12 +10183,13 @@ async function openEditShareTarget(code) {
   _shareTargetPerms  = JSON.parse(JSON.stringify(target.households || {}));
   _shareTargetColour = target.colour || HOUSEHOLD_COLOURS[0];
 
+  _shareTargetDone   = false;
   document.getElementById('share-target-modal-title').textContent = '✏️ Edit Person';
   document.getElementById('share-target-code').value = code;
   document.getElementById('share-target-name').value = target.name || '';
   document.getElementById('share-link-section').style.display = 'none';
   document.getElementById('share-target-save-btn').textContent = 'Save changes';
-  document.getElementById('share-target-save-btn').onclick = saveShareTarget;
+  document.getElementById('share-target-save-btn').onclick = null;
   selectShareType(_shareTargetType, document.querySelector(`.share-type-btn[data-type="${_shareTargetType}"]`));
   renderShareTargetColourPicker(_shareTargetColour);
   await renderShareHouseholdPerms();
@@ -10209,7 +10231,7 @@ async function saveShareTarget() {
       document.getElementById('share-link-value').textContent = link;
       document.getElementById('share-link-section').style.display = 'block';
       document.getElementById('share-target-save-btn').textContent = 'Done';
-      document.getElementById('share-target-save-btn').onclick = () => closeModal('share-target-modal');
+      _shareTargetDone = true;
     }
     await loadShareTargets();
   } catch(err) {
