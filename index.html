@@ -3764,16 +3764,18 @@ function showShareWizard(shareData) {
       </p>
       <div style="background:var(--surface2);border:1px solid var(--border);border-radius:12px;padding:16px;margin-bottom:24px;text-align:left">
         <div style="font-size:12px;color:var(--muted);font-family:var(--mono);margin-bottom:8px">YOUR ACCESS</div>
-        ${Object.entries(shareData.households || {}).map(([hKey, perms]) => `
+        ${Object.entries(shareData.households || {}).map(([hKey, perms]) => {
+          const hName = shareData.householdNames?.[hKey] || (hKey === 'default' ? 'Home' : hKey.replace('profile_','Household '));
+          return `
           <div style="margin-bottom:8px">
-            <div style="font-size:13px;font-weight:700;margin-bottom:4px">🏠 ${esc(hKey === 'default' ? 'Home' : hKey)}</div>
+            <div style="font-size:13px;font-weight:700;margin-bottom:4px">🏠 ${esc(hName)}</div>
             <div style="display:flex;gap:6px;flex-wrap:wrap">
               ${Object.entries(perms).filter(([,v]) => v !== 'none').map(([s,v]) =>
                 `<span style="font-size:11px;padding:2px 8px;border-radius:99px;background:${v==='rw'?'rgba(76,187,138,0.15)':'rgba(91,141,238,0.15)'};color:${v==='rw'?'var(--ok)':'var(--accent)'};font-family:var(--mono)">${SECTION_LABELS[s]||s} ${v==='rw'?'✏️':'👁'}</span>`
               ).join('')}
             </div>
-          </div>
-        `).join('')}
+          </div>`;
+        }).join('')}
       </div>
       <button class="btn btn-primary btn-xl full" style="margin-bottom:10px" onclick="acceptShareAndContinue()">✓ Accept &amp; Open STOCKROOM</button>
       <button class="btn btn-ghost btn-xl full" style="font-size:13px;margin-bottom:10px" onclick="wizardNext()">Set up my own account instead →</button>
@@ -3788,7 +3790,9 @@ async function acceptShareAndContinue() {
   const wizard = document.getElementById('wizard');
   if (wizard) wizard.style.display = 'none';
   applyTabPermissions();
-  await syncAll();
+  updateSyncPill('syncing');
+  // Call syncNow directly — no debounce needed here, this is the initial load
+  await syncNow();
   scheduleRender(...RENDER_REGIONS);
   toast(`Welcome to STOCKROOM ✓`);
 }
@@ -9050,16 +9054,12 @@ async function signOutDropbox() {
 // ── Unified sync: tries whichever provider is connected ──
 let _syncDebounceTimer = null;
 async function syncAll() {
-  // Debounce — if called again within 2s, reset the timer.
-  // This prevents the sync pill flickering when multiple saves fire in quick succession.
-  if (_syncDebounceTimer) {
-    clearTimeout(_syncDebounceTimer);
-  }
+  if (_syncDebounceTimer) clearTimeout(_syncDebounceTimer);
   return new Promise(resolve => {
     _syncDebounceTimer = setTimeout(async () => {
       _syncDebounceTimer = null;
-      if (driveConnected)   await syncNow();
-      if (dropboxConnected) await syncDropbox();
+      if (driveConnected || _shareState) await syncNow();
+      if (dropboxConnected)              await syncDropbox();
       resolve();
     }, 1200);
   });
@@ -9132,9 +9132,14 @@ function renderSettingsForUser() {
     const banner = document.createElement('div');
     banner.id    = 'shared-user-settings-banner';
     banner.style.cssText = 'background:rgba(91,141,238,0.08);border:1px solid rgba(91,141,238,0.2);border-radius:12px;padding:14px 16px;margin-bottom:16px;font-size:13px;line-height:1.6';
+    const userName  = esc(_shareState?.name || '');
+    const ownerName = esc(_shareState?.ownerName || 'the owner');
+    const type      = _shareState?.type || 'guest';
+    const roleLabel = type === 'family' ? ' as a <strong>family member</strong>' : type === 'cleaner' ? ' as a <strong>cleaner</strong>' : ' as a <strong>guest</strong>';
+    const greeting  = userName ? `Hi <strong>${userName}</strong>, you` : 'You';
     banner.innerHTML = `
-      <strong style="color:var(--accent)">👤 Shared access</strong> — You have joined ${esc(_shareState?.ownerName || 'a household')}'s STOCKROOM as a <strong>${esc(_shareState?.type || 'guest')}</strong>.<br>
-      <span style="color:var(--muted)">Some settings are managed by the owner.</span>
+      <div style="font-size:14px;margin-bottom:6px">${greeting} have joined <strong>${ownerName}</strong>'s household${roleLabel}.</div>
+      <span style="color:var(--muted);font-size:12px">Some settings are managed by the owner.</span>
       ${!driveConnected ? `<br><button class="btn btn-ghost btn-sm" style="margin-top:8px" onclick="connectDrive()">☁️ Connect your own Google Drive</button>` : ''}
       <button class="btn btn-ghost btn-sm" style="margin-top:8px;color:var(--danger);border-color:var(--danger)" onclick="leaveShare()">Leave shared household</button>
     `;
@@ -10289,7 +10294,13 @@ async function saveShareTarget() {
       // Create new
       const res  = await fetch(`${WORKER_URL}/share/create`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, type: _shareTargetType, colour, ownerName, households: _shareTargetPerms }),
+        body: JSON.stringify({
+          name, type: _shareTargetType, colour, ownerName,
+          households: _shareTargetPerms,
+          householdNames: Object.fromEntries(
+            Object.entries(profiles).map(([k,p]) => [k, p.name || (k==='default'?'Home':k)])
+          ),
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed');
@@ -10562,9 +10573,19 @@ async function init() {
   } catch(e){}
 
   handleOAuthRedirect();
-  // Load share state before handleURLAction so ?join=CODE can override it
   loadShareState();
-  handleURLAction();
+
+  // Check for ?join=CODE — show loading state immediately so user doesn't see normal wizard
+  const _joinCode = new URLSearchParams(location.search).get('join');
+  if (_joinCode) {
+    const _step1 = document.getElementById('wizard-step-1');
+    if (_step1) {
+      _step1.innerHTML = '<div style="font-size:52px;margin-bottom:16px">\uD83C\uDFE0</div><h1 style="font-size:24px;font-weight:700;margin-bottom:8px">Joining household…</h1><p style="color:var(--muted);font-size:14px">Checking your invite link</p>';
+      _step1.classList.add('active');
+    }
+  }
+
+  handleURLAction(); // processes ?join= and replaces loading state with join screen
 
   buildCountryGrid();
   buildSettingsCountrySelect();
@@ -10577,7 +10598,9 @@ async function init() {
   const wizardStep = localStorage.getItem('stockroom_wizard_step');
   const countrySet = localStorage.getItem('stockroom_country_set');
 
-  if (seen) {
+  if (_joinCode) {
+    // Join flow handles wizard display — don't interfere
+  } else if (seen) {
     document.getElementById('wizard').style.display = 'none';
   } else if (wizardStep === '2' || driveConnected) {
     localStorage.removeItem('stockroom_wizard_step');
@@ -10612,6 +10635,8 @@ async function init() {
   setTimeout(() => { lastAutoSync = Date.now(); checkCloudAhead(); }, 1500);
   checkPendingSWSync();
   if (migrated) setTimeout(syncAll, 1500);
+  // Shared users need an explicit sync on load — they have no driveConnected flag
+  if (_shareState && !migrated) setTimeout(syncNow, 800);
   setTimeout(checkScheduledEmail, 2000);
   setTimeout(checkLowStockNotifications, 3000);
   setTimeout(checkReminderNotifications, 3500);
