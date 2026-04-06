@@ -2025,7 +2025,7 @@ async function migrateFromLocalStorage(lsKey, dbStore, dbKey, transform) {
 const CLIENT_ID       = '589308993147-rfj3kbaave6uhf3k1ojes3ph2l1pkd1m.apps.googleusercontent.com';
 const SCOPES          = 'https://www.googleapis.com/auth/drive.file';
 const FILE_NAME       = 'stockroom_data.json';
-const WORKER_URL      = 'https://stockroom.art-bot5000.deno.net';
+const WORKER_URL      = 'https://stockrm.art-bot5000.deno.net';
 const DROPBOX_APP_KEY = 'v42gsxqwb7fommt';
 const DROPBOX_FILE    = '/stockroom_data.json';  // stored in app folder
 
@@ -8678,16 +8678,19 @@ async function syncAll() {
 function updateSyncUI() {
   updateDriveUI();
   updateDropboxUI();
-  // Update header pill to reflect overall state
   const pill  = document.getElementById('sync-pill');
   const label = document.getElementById('sync-label');
   if (!pill || !label) return;
-  if (driveConnected) {
+  // Only show green if we have a confirmed sync (lastSynced is set)
+  if (driveConnected && settings.lastSynced) {
     pill.className    = 'sync-pill synced';
     label.textContent = 'Drive synced';
-  } else if (dropboxConnected) {
+  } else if (dropboxConnected && settings.lastSynced) {
     pill.className    = 'sync-pill synced';
     label.textContent = 'Dropbox synced';
+  } else if (driveConnected || dropboxConnected) {
+    pill.className    = 'sync-pill pending';
+    label.textContent = 'Syncing…';
   } else {
     pill.className    = 'sync-pill pending';
     label.textContent = 'Local only';
