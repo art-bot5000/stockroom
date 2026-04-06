@@ -750,7 +750,10 @@
 
 <!-- ═══ HEADER ═══ -->
 <div id="app-header">
-  <div class="logo" style="cursor:pointer" onclick="openProfilePicker()" title="Switch household profile">STOCKROOM <span id="profile-label">/ HOUSEHOLD TRACKER</span></div>
+  <div style="display:flex;align-items:center;gap:0;cursor:pointer" onclick="openProfilePicker()" title="Switch or add household">
+    <div class="logo">STOCKROOM <span id="profile-label">/ HOUSEHOLD TRACKER</span></div>
+    <button class="btn btn-ghost btn-sm" style="margin-left:6px;font-size:12px;padding:4px 8px;border-radius:8px;opacity:0.7" title="Add or switch household" onclick="event.stopPropagation();openProfilePicker()">🏠+</button>
+  </div>
   <div style="display:flex;align-items:center;gap:8px">
     <div id="presence-bar" style="display:none"></div>
     <div id="sync-pill" class="sync-pill pending">
@@ -996,12 +999,53 @@
 
   <!-- SETTINGS VIEW -->
   <div class="view" id="view-settings">
+
+    <!-- 1. Households — first, it's a core feature -->
+    <div class="settings-card">
+      <h3>🏠 Households</h3>
+      <p style="font-size:13px;color:var(--muted);margin-bottom:16px;line-height:1.6">Manage your households and share access with family, cleaners or guests.</p>
+
+      <!-- Households list -->
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
+        <h4 style="font-size:13px;font-weight:700">Your Households</h4>
+        <button class="btn btn-ghost btn-sm" onclick="openProfilePicker()">All →</button>
+      </div>
+      <div id="settings-household-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px"></div>
+      <div style="display:flex;gap:8px;margin-bottom:16px">
+        <input type="text" id="settings-new-household-name" placeholder="New household name…"
+          style="flex:1;background:var(--bg);border:1px solid var(--border);border-radius:8px;padding:8px 12px;color:var(--text);font-family:var(--sans);font-size:13px;outline:none"
+          maxlength="24">
+        <button class="btn btn-primary btn-sm" onclick="addProfileFromSettings()">+ Add</button>
+      </div>
+
+      <!-- Divider -->
+      <div style="border-top:1px solid var(--glass-border);margin:0 0 16px"></div>
+
+      <!-- Share Access -->
+      <div id="share-targets-section">
+        <h4 style="font-size:13px;font-weight:700;margin-bottom:4px">🔗 Share Access</h4>
+        <p style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.5">Give others a link to access specific households. Up to 5 people. Adding someone automatically enables live presence.</p>
+        <div id="share-targets-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px"></div>
+        <button class="btn btn-ghost btn-sm" id="add-share-target-btn" onclick="openAddShareTarget()">+ Add person</button>
+      </div>
+
+      <!-- Joined section — shown when this device has joined someone else's household -->
+      <div id="household-joined-section" style="display:none;margin-top:16px;padding-top:16px;border-top:1px solid var(--glass-border)">
+        <h4 style="font-size:13px;font-weight:700;margin-bottom:8px">🔗 Joined Household</h4>
+        <p style="font-size:12px;color:var(--ok);margin-bottom:4px" id="joined-status-text">✓ Syncing to shared household</p>
+        <p style="font-size:12px;color:var(--muted);margin-bottom:10px">Connect your own Google Drive below to also manage your own households.</p>
+        <button class="btn btn-ghost btn-sm" onclick="leaveShare()" style="color:var(--danger);border-color:var(--danger)">Leave shared household</button>
+      </div>
+
+      <div id="household-status" style="margin-top:12px;font-size:12px;color:var(--muted);font-family:var(--mono)"></div>
+    </div>
+
+    <!-- 2. Cloud Sync -->
     <div class="settings-card">
       <h3>☁️ Cloud Sync</h3>
-      <p style="font-size:12px;color:var(--muted);margin-bottom:14px">Choose one provider to sync your data. Your data is stored in your own account.</p>
-
+      <p style="font-size:12px;color:var(--muted);margin-bottom:14px">Sync your data to your own cloud account. One provider at a time. Your data is never stored on our servers.</p>
       <div class="setting-row">
-        <div class="setting-info"><h4>Google Drive</h4><p>Sync to your Google Drive account</p></div>
+        <div class="setting-info"><h4>Google Drive</h4><p>Recommended — used for email reports too</p></div>
         <div style="display:flex;align-items:center;gap:8px">
           <span id="drive-status" style="display:none;align-items:center;gap:6px;font-size:12px;color:var(--ok);font-family:var(--mono)">✓ Connected</span>
           <button id="drive-connect-btn" class="btn btn-blue btn-sm" onclick="openDrivePermissionModal('settings')">Connect Drive</button>
@@ -1009,9 +1053,8 @@
           <button id="drive-signout-btn" class="btn btn-danger btn-sm" style="display:none" onclick="signOutDrive()">Sign Out</button>
         </div>
       </div>
-
       <div class="setting-row">
-        <div class="setting-info"><h4>Dropbox</h4><p>Sync to your Dropbox account</p></div>
+        <div class="setting-info"><h4>Dropbox</h4><p>Alternative cloud sync option</p></div>
         <div style="display:flex;align-items:center;gap:8px">
           <span id="dropbox-status" style="display:none;align-items:center;gap:6px;font-size:12px;color:var(--ok);font-family:var(--mono)">✓ Connected</span>
           <button id="dropbox-connect-btn" class="btn btn-ghost btn-sm" onclick="connectDropbox()">Connect Dropbox</button>
@@ -1021,68 +1064,13 @@
       </div>
     </div>
 
+    <!-- 3. Alerts — push + email reports merged -->
     <div class="settings-card">
-      <h3>📧 Email Reminders</h3>
-      <p style="font-size:12px;color:var(--muted);margin-bottom:4px">Settings save automatically when changed.</p>
-      <div class="setting-row">
-        <div class="setting-info"><h4>Your email address</h4><p>Where to send low-stock reminders</p></div>
-        <input type="email" id="setting-email" placeholder="you@example.com"
-          style="width:200px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-family:var(--sans);font-size:13px;outline:none"
-          onchange="saveSettings()">
-      </div>
-      <div class="setting-row">
-        <div class="setting-info">
-          <h4>First reminder date &amp; time</h4>
-          <p>When to send the first scheduled reminder</p>
-        </div>
-        <div style="display:flex;gap:8px;align-items:center">
-          <input type="date" id="setting-email-start" onchange="saveSettings()"
-            style="background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-family:var(--sans);font-size:13px;outline:none">
-          <input type="time" id="setting-email-start-time" onchange="saveSettings()"
-            style="background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-family:var(--sans);font-size:13px;outline:none;width:100px">
-        </div>
-      </div>
-      <div class="setting-row">
-        <div class="setting-info"><h4>Repeat every</h4><p>How often to send after the first reminder</p></div>
-        <select id="setting-email-interval" onchange="saveSettings()"
-          style="width:140px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 28px 6px 8px;font-family:var(--sans);font-size:13px">
-          <option value="0">Manual only</option>
-          <option value="7">Weekly</option>
-          <option value="14">Fortnightly</option>
-          <option value="30" selected>Monthly</option>
-          <option value="60">Every 2 months</option>
-        </select>
-      </div>
-      <div class="setting-row" id="last-sent-row" style="display:none">
-        <div class="setting-info">
-          <h4>Schedule status</h4>
-          <p id="last-sent-text">Not sent yet</p>
-        </div>
-        <button class="btn btn-ghost btn-sm" onclick="resetLastSent()">Reset</button>
-      </div>
-      <div class="setting-row">
-        <div class="setting-info">
-          <h4>Send now</h4>
-          <p>Send a reminder immediately with 7-day and 30-day items</p>
-        </div>
-        <button class="btn btn-primary btn-sm" id="send-reminder-btn" onclick="sendReminderEmail(true)">📧 Send Now</button>
-      </div>
-      <div id="email-status" style="font-size:12px;margin-top:8px;display:none"></div>
-      <div class="setting-row" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--glass-border)">
-        <div class="setting-info">
-          <h4>Server schedule status</h4>
-          <p id="kv-status-text" style="font-family:var(--mono);font-size:11px">Tap check to verify</p>
-        </div>
-        <div style="display:flex;gap:6px">
-          <button class="btn btn-ghost btn-sm" onclick="checkKVStatus()" id="kv-check-btn">Check</button>
-          <button class="btn btn-ghost btn-sm" onclick="repushToServer()" id="kv-repush-btn" title="Re-send your email and schedule to the server">Re-push</button>
-        </div>
-      </div>
-    </div>
+      <h3>🔔 Alerts &amp; Reports</h3>
 
-    <div class="settings-card">
-      <h3>🔔 Push Notifications</h3>
-      <p id="notif-platform-note" style="font-size:12px;color:var(--muted);margin-bottom:14px">Get notified on this device when items are running low — no email needed.</p>
+      <!-- Push notifications -->
+      <h4 style="font-size:13px;font-weight:700;margin-bottom:4px">Push Notifications</h4>
+      <p id="notif-platform-note" style="font-size:12px;color:var(--muted);margin-bottom:12px">Get notified on this device when items are running low.</p>
       <div class="setting-row">
         <div class="setting-info">
           <h4>Low stock alerts</h4>
@@ -1106,44 +1094,18 @@
         </div>
         <button id="install-prompt-btn" class="btn btn-blue btn-sm" onclick="installPWA()">Install App</button>
       </div>
-    </div>
 
-    <div class="settings-card">
-      <h3>⚙️ Preferences</h3>
-      <div class="setting-row">
-        <div class="setting-info"><h4>Low stock warning</h4><p>Warn when stock drops below this %</p></div>
-        <select id="setting-threshold" onchange="saveSettings()" style="width:90px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 28px 6px 8px;font-family:var(--sans);font-size:13px">
-          <option value="10">10%</option><option value="15">15%</option><option value="20" selected>20%</option><option value="25">25%</option><option value="33">33%</option>
-        </select>
-      </div>
-      <div class="setting-row">
-        <div class="setting-info"><h4>Country / Region</h4><p>Sets which stores appear in the price checker</p></div>
-        <select id="setting-country" onchange="saveSettings()" style="width:190px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 28px 6px 8px;font-family:var(--sans);font-size:13px"></select>
-      </div>
-    </div>
-    <div class="settings-card">
-      <h3>📦 Data</h3>
-      <div class="setting-row">
-        <div class="setting-info"><h4>Export data (JSON)</h4><p>Download all items as a backup file</p></div>
-        <button class="btn btn-ghost btn-sm" onclick="exportData()">Export</button>
-      </div>
-      <div class="setting-row">
-        <div class="setting-info"><h4>Import data</h4><p>Restore from a previously exported file</p></div>
-        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('import-file').click()">Import</button>
-        <input type="file" id="import-file" style="display:none" accept=".json" onchange="importData(event)">
-      </div>
-      <div class="setting-row">
-        <div class="setting-info"><h4>Clear all data</h4><p>Remove all items and history</p></div>
-        <button class="btn btn-danger btn-sm" onclick="clearAll()">Clear All</button>
-      </div>
-    </div>
-    <div class="settings-card">
-      <h3>📧 Email Reports</h3>
+      <!-- Divider -->
+      <div style="border-top:1px solid var(--glass-border);margin:16px 0"></div>
+
+      <!-- Email reports -->
+      <h4 style="font-size:13px;font-weight:700;margin-bottom:4px">📧 Email Reports</h4>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:12px">Get a scheduled stock report by email. Reads from your Google Drive — connect Drive above first.</p>
       <div id="email-setup-needed" style="display:none">
-        <p style="font-size:13px;color:var(--muted);margin-bottom:14px">Get a scheduled stock report emailed to you. Requires the Stockroom email service to be configured — paste your Worker URL in the app's <code style="font-family:var(--mono);font-size:12px;background:var(--surface2);padding:2px 6px;border-radius:4px">WORKER_URL</code> constant first.</p>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:14px;line-height:1.6">The email service requires a backend URL to be configured. Contact the app owner for setup details.</p>
       </div>
       <div id="email-not-registered" style="display:none">
-        <p style="font-size:13px;color:var(--muted);margin-bottom:14px">Receive a stock report by email on a schedule you choose. Your data stays in your own Google Drive — the email service only reads it to generate the report.</p>
+        <p style="font-size:13px;color:var(--muted);margin-bottom:14px">Receive a stock report by email on a schedule you choose. Your data stays in your own Google Drive.</p>
         <div class="form-grid" style="margin-bottom:14px">
           <div class="field">
             <label>Your email address</label>
@@ -1201,51 +1163,107 @@
         </div>
       </div>
     </div>
+
+    <!-- 4. Reminders (renamed from "Email Reminders" — these are in-app reminder schedules) -->
     <div class="settings-card">
-      <h3>👥 Household Mode</h3>
-      <p style="font-size:13px;color:var(--muted);margin-bottom:14px;line-height:1.6">Share your stockroom data with another person. Each person uses their own Google account — no credentials are shared.</p>
+      <h3>📅 Reminder Schedules</h3>
+      <p style="font-size:12px;color:var(--muted);margin-bottom:4px">Configure when in-app reminders fire and where notifications are sent. Settings save automatically.</p>
       <div class="setting-row">
-        <div class="setting-info"><h4>Enable household mode</h4><p>Shows live presence for all household members</p></div>
-        <label style="display:flex;align-items:center;gap:8px;cursor:pointer">
-          <input type="checkbox" id="household-mode-toggle" onchange="saveHouseholdSettings()" style="width:18px;height:18px;accent-color:var(--accent)">
-        </label>
+        <div class="setting-info"><h4>Notification email</h4><p>Where reminder alerts are sent</p></div>
+        <input type="email" id="setting-email" placeholder="you@example.com"
+          style="width:200px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-family:var(--sans);font-size:13px;outline:none"
+          onchange="saveSettings()">
       </div>
-      <div id="household-settings-body" style="display:none;margin-top:14px;padding-top:14px;border-top:1px solid var(--glass-border)">
-        <div class="form-group">
-          <label class="form-label">Your display name</label>
-          <input class="form-input" id="household-display-name" type="text" placeholder="e.g. Pete" maxlength="20" autocomplete="off" oninput="saveHouseholdSettings()">
+      <div class="setting-row">
+        <div class="setting-info">
+          <h4>First reminder date &amp; time</h4>
+          <p>When to send the first scheduled reminder</p>
         </div>
-        <div class="form-group" style="margin-top:10px">
-          <label class="form-label">Colour</label>
-          <div id="household-colour-picker" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"></div>
+        <div style="display:flex;gap:8px;align-items:center">
+          <input type="date" id="setting-email-start" onchange="saveSettings()"
+            style="background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-family:var(--sans);font-size:13px;outline:none">
+          <input type="time" id="setting-email-start-time" onchange="saveSettings()"
+            style="background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 10px;font-family:var(--sans);font-size:13px;outline:none;width:100px">
         </div>
-
-        <!-- Share Targets — owner only -->
-        <div id="share-targets-section" style="margin-top:16px;padding-top:16px;border-top:1px solid var(--glass-border)">
-          <h4 style="font-size:13px;font-weight:700;margin-bottom:4px">👥 Share Access</h4>
-          <p style="font-size:12px;color:var(--muted);margin-bottom:12px;line-height:1.5">Give others access to specific households. Up to 5 share targets. Each gets a unique link.</p>
-          <div id="share-targets-list" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px"></div>
-          <button class="btn btn-ghost btn-sm" id="add-share-target-btn" onclick="openAddShareTarget()">+ Add person</button>
+      </div>
+      <div class="setting-row">
+        <div class="setting-info"><h4>Repeat every</h4><p>How often to check after the first reminder</p></div>
+        <select id="setting-email-interval" onchange="saveSettings()"
+          style="width:140px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 28px 6px 8px;font-family:var(--sans);font-size:13px">
+          <option value="0">Manual only</option>
+          <option value="7">Weekly</option>
+          <option value="14">Fortnightly</option>
+          <option value="30" selected>Monthly</option>
+          <option value="60">Every 2 months</option>
+        </select>
+      </div>
+      <div class="setting-row" id="last-sent-row" style="display:none">
+        <div class="setting-info">
+          <h4>Schedule status</h4>
+          <p id="last-sent-text">Not sent yet</p>
         </div>
-
-        <!-- Joined: current share state (shown when this device has joined someone else) -->
-        <div id="household-joined-section" style="display:none;margin-top:16px;padding-top:16px;border-top:1px solid var(--glass-border)">
-          <h4 style="font-size:13px;font-weight:700;margin-bottom:8px">🔗 Joined Household</h4>
-          <p style="font-size:12px;color:var(--ok);margin-bottom:4px" id="joined-status-text">✓ Syncing to shared household</p>
-          <p style="font-size:12px;color:var(--muted);margin-bottom:10px">To manage your own household, connect Google Drive in Cloud Sync above.</p>
-          <button class="btn btn-ghost btn-sm" onclick="leaveShare()" style="color:var(--danger);border-color:var(--danger)">Leave shared household</button>
+        <button class="btn btn-ghost btn-sm" onclick="resetLastSent()">Reset</button>
+      </div>
+      <div class="setting-row">
+        <div class="setting-info">
+          <h4>Send now</h4>
+          <p>Send a reminder immediately with 7-day and 30-day items</p>
         </div>
-
-        <div id="household-status" style="margin-top:12px;font-size:12px;color:var(--muted);font-family:var(--mono)"></div>
+        <button class="btn btn-primary btn-sm" id="send-reminder-btn" onclick="sendReminderEmail(true)">📧 Send Now</button>
+      </div>
+      <div id="email-status" style="font-size:12px;margin-top:8px;display:none"></div>
+      <div class="setting-row" style="margin-top:8px;padding-top:8px;border-top:1px solid var(--glass-border)">
+        <div class="setting-info">
+          <h4>Server schedule status</h4>
+          <p id="kv-status-text" style="font-family:var(--mono);font-size:11px">Tap check to verify</p>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button class="btn btn-ghost btn-sm" onclick="checkKVStatus()" id="kv-check-btn">Check</button>
+          <button class="btn btn-ghost btn-sm" onclick="repushToServer()" id="kv-repush-btn" title="Re-send your email and schedule to the server">Re-push</button>
+        </div>
       </div>
     </div>
 
+    <!-- 5. Preferences -->
+    <div class="settings-card">
+      <h3>⚙️ Preferences</h3>
+      <div class="setting-row">
+        <div class="setting-info"><h4>Low stock warning</h4><p>Warn when stock drops below this %</p></div>
+        <select id="setting-threshold" onchange="saveSettings()" style="width:90px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 28px 6px 8px;font-family:var(--sans);font-size:13px">
+          <option value="10">10%</option><option value="15">15%</option><option value="20" selected>20%</option><option value="25">25%</option><option value="33">33%</option>
+        </select>
+      </div>
+      <div class="setting-row">
+        <div class="setting-info"><h4>Country / Region</h4><p>Sets which stores appear in the price checker</p></div>
+        <select id="setting-country" onchange="saveSettings()" style="width:190px;background:var(--bg);border:1px solid var(--border);color:var(--text);border-radius:6px;padding:6px 28px 6px 8px;font-family:var(--sans);font-size:13px"></select>
+      </div>
+    </div>
+
+    <!-- 6. Data -->
+    <div class="settings-card">
+      <h3>📦 Data</h3>
+      <div class="setting-row">
+        <div class="setting-info"><h4>Export data (JSON)</h4><p>Download all items as a backup file</p></div>
+        <button class="btn btn-ghost btn-sm" onclick="exportData()">Export</button>
+      </div>
+      <div class="setting-row">
+        <div class="setting-info"><h4>Import data</h4><p>Restore from a previously exported file</p></div>
+        <button class="btn btn-ghost btn-sm" onclick="document.getElementById('import-file').click()">Import</button>
+        <input type="file" id="import-file" style="display:none" accept=".json" onchange="importData(event)">
+      </div>
+      <div class="setting-row">
+        <div class="setting-info"><h4>Clear all data</h4><p>Remove all items and history from this household</p></div>
+        <button class="btn btn-danger btn-sm" onclick="clearAll()">Clear All</button>
+      </div>
+    </div>
+
+    <!-- 7. About -->
     <div class="settings-card">
       <h3>ℹ️ About</h3>
       <p style="font-size:13px;color:var(--muted);line-height:1.8">
         <strong style="color:var(--text)">STOCKROOM</strong> — Household Consumables Tracker.<br>
         Stock estimates are calculated from your purchase history, quantity per purchase, and months-of-supply settings.<br>
-        Data syncs to your Google Drive account. Export regularly as an additional backup.
+        Data syncs to your Google Drive or Dropbox account. Export regularly as an additional backup.
       </p>
     </div>
   </div>
@@ -1669,6 +1687,10 @@
         <button class="share-type-btn" data-type="cleaner" onclick="selectShareType('cleaner',this)" style="padding:8px 14px;border-radius:8px;border:2px solid var(--border);background:transparent;color:var(--muted);font-size:13px;cursor:pointer">🧹 Cleaner</button>
         <button class="share-type-btn" data-type="guest" onclick="selectShareType('guest',this)" style="padding:8px 14px;border-radius:8px;border:2px solid var(--border);background:transparent;color:var(--muted);font-size:13px;cursor:pointer">👤 Guest</button>
       </div>
+    </div>
+    <div class="form-group" style="margin-bottom:16px">
+      <label class="form-label">Colour</label>
+      <div id="share-target-colours" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:6px"></div>
     </div>
     <div class="form-group" style="margin-bottom:16px">
       <label class="form-label" style="margin-bottom:8px">Access per household</label>
@@ -9059,9 +9081,8 @@ function renderSettingsForUser() {
     settingsView.insertBefore(banner, settingsView.firstChild);
   }
 
-  // Hide owner-only cards: Cloud Sync, Household Mode sharing, Email Reminders, Notifications, Tags
-  // Shared users can see their own display preferences but not system settings
-  const ownerOnlyHeadings = ['Cloud Sync', 'Household Mode', 'Email Reminders', 'Push Notifications', 'Tags'];
+  // Hide owner-only cards for shared users
+  const ownerOnlyHeadings = ['Cloud Sync', 'Alerts', 'Reminder Schedules', 'Preferences', 'Data'];
   document.querySelectorAll('#view-settings .settings-card h3').forEach(h3 => {
     const isOwnerOnly = ownerOnlyHeadings.some(s => h3.textContent.includes(s));
     if (isOwnerOnly) h3.closest('.settings-card').style.display = 'none';
@@ -9685,25 +9706,20 @@ function loadHouseholdSettings() {
     if (!raw) return;
     const d = JSON.parse(raw);
     _householdEnabled = !!d.enabled;
-    _householdName    = d.name    || '';
-    _householdColour  = d.colour  || PRESENCE_COLOURS[0];
+    _householdColour  = d.colour || PRESENCE_COLOURS[0];
   } catch(e) {}
 }
 
 function saveHouseholdSettings() {
-  _householdEnabled = document.getElementById('household-mode-toggle')?.checked || false;
-  _householdName    = (document.getElementById('household-display-name')?.value || '').trim();
-  // colour saved via pickHouseholdColour
+  // Household mode auto-enables when a share target is added
+  if (!_householdEnabled) return;
   try {
     localStorage.setItem('stockroom_household', JSON.stringify({
       enabled: _householdEnabled,
-      name:    _householdName,
       colour:  _householdColour,
     }));
   } catch(e) {}
-  document.getElementById('household-settings-body').style.display = _householdEnabled ? 'block' : 'none';
   if (_householdEnabled) connectPresence();
-  else disconnectPresence();
 }
 
 function pickHouseholdColour(colour) {
@@ -9988,6 +10004,7 @@ async function proxyGetModifiedTime() {
 let _shareTargets     = []; // cached from backend
 let _shareTargetType  = 'family';
 let _shareTargetPerms = {}; // { householdKey: { stockroom, groceries, reminders, savings, report } }
+let _shareTargetColour = HOUSEHOLD_COLOURS[0];
 
 async function loadShareTargets() {
   if (!WORKER_URL || !isOwner()) return;
@@ -10009,8 +10026,11 @@ function renderShareTargetsList() {
   if (!_shareTargets.length) {
     list.innerHTML = `<p style="font-size:12px;color:var(--muted)">No one has access yet.</p>`;
   } else {
-    list.innerHTML = _shareTargets.map(t => `
+    list.innerHTML = _shareTargets.map(t => {
+      const colour = t.colour || '#e8a838';
+      return `
       <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--surface2);border:1px solid var(--border);border-radius:10px">
+        <div style="width:12px;height:12px;border-radius:50%;background:${colour};flex-shrink:0;box-shadow:0 1px 4px rgba(0,0,0,0.3)"></div>
         <div style="flex:1;min-width:0">
           <div style="font-size:13px;font-weight:700">${typeEmoji[t.type]||'👤'} ${esc(t.name)}</div>
           <div style="font-size:11px;color:var(--muted);font-family:var(--mono)">${t.type} · code: ${t.code}</div>
@@ -10018,9 +10038,29 @@ function renderShareTargetsList() {
         <button class="btn btn-ghost btn-sm" onclick="openEditShareTarget('${t.code}')">✏️</button>
         <button class="btn btn-ghost btn-sm" onclick="copyShareTargetLink('${t.code}')" title="Copy link">🔗</button>
         <button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="deleteShareTarget('${t.code}')">✕</button>
-      </div>`).join('');
+      </div>`;
+    }).join('');
   }
   if (btn) btn.style.display = _shareTargets.length >= 5 ? 'none' : 'inline-flex';
+}
+
+function renderShareTargetColourPicker(selectedColour) {
+  const el = document.getElementById('share-target-colours');
+  if (!el) return;
+  el.innerHTML = HOUSEHOLD_COLOURS.map(c => `
+    <div onclick="selectShareTargetColour('${c}')"
+      data-colour="${c}"
+      style="width:26px;height:26px;border-radius:50%;background:${c};cursor:pointer;
+             border:3px solid ${c === selectedColour ? 'var(--text)' : 'transparent'};
+             transition:border-color 0.15s;box-shadow:0 2px 5px rgba(0,0,0,0.3)"></div>
+  `).join('');
+}
+
+function selectShareTargetColour(colour) {
+  _shareTargetColour = colour;
+  document.querySelectorAll('#share-target-colours [data-colour]').forEach(el => {
+    el.style.borderColor = el.dataset.colour === colour ? 'var(--text)' : 'transparent';
+  });
 }
 
 function selectShareType(type, btn) {
@@ -10096,10 +10136,11 @@ function setSharePerm(hKey, section, value) {
 
 async function openAddShareTarget() {
   if (_shareTargets.length >= 5) { toast('Maximum 5 share targets reached'); return; }
-  _shareTargetType  = 'family';
-  _shareTargetPerms = {};
-  const profiles    = await getProfiles();
-  const defaults    = SHARE_TYPE_DEFAULTS.family;
+  _shareTargetType   = 'family';
+  _shareTargetPerms  = {};
+  _shareTargetColour = HOUSEHOLD_COLOURS[_shareTargets.length % HOUSEHOLD_COLOURS.length];
+  const profiles     = await getProfiles();
+  const defaults     = SHARE_TYPE_DEFAULTS.family;
   Object.keys(profiles).forEach(k => { _shareTargetPerms[k] = { ...defaults }; });
 
   document.getElementById('share-target-modal-title').textContent = '👤 Add Person';
@@ -10107,7 +10148,9 @@ async function openAddShareTarget() {
   document.getElementById('share-target-name').value = '';
   document.getElementById('share-link-section').style.display = 'none';
   document.getElementById('share-target-save-btn').textContent = 'Create & get link';
+  document.getElementById('share-target-save-btn').onclick = saveShareTarget;
   selectShareType('family', document.querySelector('.share-type-btn[data-type="family"]'));
+  renderShareTargetColourPicker(_shareTargetColour);
   await renderShareHouseholdPerms();
   openModal('share-target-modal');
 }
@@ -10115,15 +10158,18 @@ async function openAddShareTarget() {
 async function openEditShareTarget(code) {
   const target = _shareTargets.find(t => t.code === code);
   if (!target) return;
-  _shareTargetType  = target.type || 'family';
-  _shareTargetPerms = JSON.parse(JSON.stringify(target.households || {}));
+  _shareTargetType   = target.type || 'family';
+  _shareTargetPerms  = JSON.parse(JSON.stringify(target.households || {}));
+  _shareTargetColour = target.colour || HOUSEHOLD_COLOURS[0];
 
   document.getElementById('share-target-modal-title').textContent = '✏️ Edit Person';
   document.getElementById('share-target-code').value = code;
   document.getElementById('share-target-name').value = target.name || '';
   document.getElementById('share-link-section').style.display = 'none';
   document.getElementById('share-target-save-btn').textContent = 'Save changes';
+  document.getElementById('share-target-save-btn').onclick = saveShareTarget;
   selectShareType(_shareTargetType, document.querySelector(`.share-type-btn[data-type="${_shareTargetType}"]`));
+  renderShareTargetColourPicker(_shareTargetColour);
   await renderShareHouseholdPerms();
   openModal('share-target-modal');
 }
@@ -10131,7 +10177,8 @@ async function openEditShareTarget(code) {
 async function saveShareTarget() {
   const name = document.getElementById('share-target-name').value.trim();
   if (!name) { toast('Enter a name for this person'); return; }
-  const code     = document.getElementById('share-target-code').value;
+  const code      = document.getElementById('share-target-code').value;
+  const colour    = _shareTargetColour;
   const ownerName = (await getProfiles())['default']?.name || 'Home';
   const btn = document.getElementById('share-target-save-btn');
   if (btn) { btn.textContent = '⏳'; btn.disabled = true; }
@@ -10141,17 +10188,23 @@ async function saveShareTarget() {
       // Update existing
       await fetch(`${WORKER_URL}/share/update`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ code, name, type: _shareTargetType, households: _shareTargetPerms }),
+        body: JSON.stringify({ code, name, type: _shareTargetType, colour, households: _shareTargetPerms }),
       });
       toast(`Updated ${name} ✓`);
     } else {
       // Create new
       const res  = await fetch(`${WORKER_URL}/share/create`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name, type: _shareTargetType, ownerName, households: _shareTargetPerms }),
+        body: JSON.stringify({ name, type: _shareTargetType, colour, ownerName, households: _shareTargetPerms }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed');
+      // Auto-enable household mode when first share target is created
+      if (!_householdEnabled) {
+        _householdEnabled = true;
+        try { localStorage.setItem('stockroom_household', JSON.stringify({ enabled: true, name: _householdName, colour: _householdColour })); } catch(e) {}
+        connectPresence();
+      }
       const link = data.link || `https://art-bot5000.github.io/stockroom/?join=${data.code}`;
       document.getElementById('share-link-value').textContent = link;
       document.getElementById('share-link-section').style.display = 'block';
@@ -10201,19 +10254,51 @@ function updateHouseholdShareUI() {
   }
 }
 
+async function renderSettingsHouseholdList() {
+  const list = document.getElementById('settings-household-list');
+  if (!list) return;
+  const profiles = await getProfiles();
+  list.innerHTML = Object.entries(profiles).map(([key, p]) => {
+    const isActive = key === activeProfile;
+    const colour   = p.colour || '#e8a838';
+    const count    = (p.items || []).length;
+    return `<div style="display:flex;align-items:center;gap:8px;padding:10px 12px;background:${isActive?'rgba(232,168,56,0.08)':'var(--surface2)'};border:2px solid ${isActive?colour:'var(--border)'};border-radius:10px">
+      <div style="width:10px;height:10px;border-radius:50%;background:${colour};flex-shrink:0"></div>
+      <div style="flex:1;font-size:13px;font-weight:${isActive?'700':'400'};color:${isActive?colour:'var(--text)'}">
+        ${esc(p.name || key)}${isActive?' ✓':''}
+        <span style="font-size:11px;font-weight:400;color:var(--muted);margin-left:6px">${count} item${count!==1?'s':''}</span>
+      </div>
+      ${!isActive ? `<button class="btn btn-ghost btn-sm" onclick="switchProfileFromSettings('${key}')">Switch</button>` : ''}
+      <button class="btn btn-ghost btn-sm" onclick="openHouseholdEdit('${key}')" title="Edit">✏️</button>
+      ${key !== 'default' ? `<button class="btn btn-ghost btn-sm" style="color:var(--danger)" onclick="deleteProfile('${key}');renderSettingsHouseholdList()">✕</button>` : ''}
+    </div>`;
+  }).join('');
+}
+
+async function switchProfileFromSettings(key) {
+  await switchProfile(key);
+  renderSettingsHouseholdList();
+}
+
+async function addProfileFromSettings() {
+  const input = document.getElementById('settings-new-household-name');
+  const name  = input?.value.trim() || '';
+  // Temporarily set the new-profile-name so addProfile can read it
+  const nameEl = document.getElementById('new-profile-name');
+  if (nameEl) nameEl.value = name;
+  await addProfile();
+  if (input) input.value = '';
+  renderSettingsHouseholdList();
+}
+
 function initHouseholdSettingsUI() {
   loadHouseholdSettings();
-  loadShareState(); // replaces loadHouseholdShareState
+  loadShareState();
   updateHouseholdShareUI();
-  const toggle = document.getElementById('household-mode-toggle');
-  const nameEl = document.getElementById('household-display-name');
-  if (toggle) toggle.checked = _householdEnabled;
-  if (nameEl) nameEl.value   = _householdName;
-  document.getElementById('household-settings-body').style.display = _householdEnabled ? 'block' : 'none';
-  renderHouseholdColourPicker();
+  renderHouseholdColourPicker(); // still used by presence system internally
   if (_householdEnabled) connectPresence();
   applyTabPermissions();
-  // Load share targets if owner
+  renderSettingsHouseholdList();
   if (isOwner() && WORKER_URL) loadShareTargets();
 }
 
