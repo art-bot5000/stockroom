@@ -10200,7 +10200,9 @@ async function openAddShareTarget() {
   _shareTargetColour = HOUSEHOLD_COLOURS[_shareTargets.length % HOUSEHOLD_COLOURS.length];
   const profiles     = await getProfiles();
   const defaults     = SHARE_TYPE_DEFAULTS.family;
-  Object.keys(profiles).forEach(k => { _shareTargetPerms[k] = { ...defaults }; });
+  // Always include at least the default household
+  const profileKeys  = Object.keys(profiles).length ? Object.keys(profiles) : ['default'];
+  profileKeys.forEach(k => { _shareTargetPerms[k] = { ...defaults }; });
 
   _shareTargetDone   = false;
   document.getElementById('share-target-modal-title').textContent = '👤 Add Person';
@@ -10208,7 +10210,6 @@ async function openAddShareTarget() {
   document.getElementById('share-target-name').value = '';
   document.getElementById('share-link-section').style.display = 'none';
   document.getElementById('share-target-save-btn').textContent = 'Create & get link';
-  document.getElementById('share-target-save-btn').onclick = null;
   selectShareType('family', document.querySelector('.share-type-btn[data-type="family"]'));
   renderShareTargetColourPicker(_shareTargetColour);
   await renderShareHouseholdPerms();
@@ -10228,7 +10229,6 @@ async function openEditShareTarget(code) {
   document.getElementById('share-target-name').value = target.name || '';
   document.getElementById('share-link-section').style.display = 'none';
   document.getElementById('share-target-save-btn').textContent = 'Save changes';
-  document.getElementById('share-target-save-btn').onclick = null;
   selectShareType(_shareTargetType, document.querySelector(`.share-type-btn[data-type="${_shareTargetType}"]`));
   renderShareTargetColourPicker(_shareTargetColour);
   await renderShareHouseholdPerms();
